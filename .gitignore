@@ -1,0 +1,53 @@
+# VS/Visual Micro
+.vs/
+*.VC.db
+*.VC.opendb
+*.sdf
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.vscode/
+
+# Visual Micro
+__vm/
+*.vmps.xml
+*.vmps.bak
+*.vmsln
+*.vmproj
+*.vmdebug
+
+# Build artifacts (Arduino / ESP32)
+*.elf
+*.bin
+*.hex
+*.eep
+*.map
+*.d
+*.o
+*.a
+*.lst
+*.sym
+*.tmp
+*.log
+
+# Build folders (Arduino/VM)
+build/
+Build/
+.vscode/
+
+# Backup / temporary
+*.bak
+*.tmp
+*.old
+*.orig
+
+# OS-spesifikke
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# Python (hvis du bruker det i repoet)
+__pycache__/
+*.pyc
