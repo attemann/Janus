@@ -22,7 +22,7 @@
 	#define BS_RX_FREQ 868200000
 
 	#define BASE_NODE_ID   1
-	#define NODE_ID        2
+	#define NODE_ID_INIT   2
 	#define NETWORK_ID   100
 
 	#define RTCM_INTERVAL 1000 // 1 second

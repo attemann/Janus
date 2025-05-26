@@ -23,7 +23,7 @@ void sendWithReturnFreq(uint8_t dest, const uint8_t* msg, uint8_t len) {
 }
 
 uint8_t fixStatus(GNSSFix fix) {
-  uint8_t status;
+  uint8_t status=0;
 
   if (fix.gpsFix)     status |= STATUS_GPS_FIX;       // Bit 3: GNSS fix valid
   if (fix.rtkFloat)   status |= STATUS_RTK_FLOAT;     // Bit 1: RTK Float

@@ -139,7 +139,7 @@ void setup() {
         if (++numStar > 4) numStar = 0;
     }
 
-    initRTCMForwarder(&serialGPS, &txRadio, NODE_ID);
+    initRTCMForwarder(&serialGPS, &txRadio, NODE_ID_INIT);
     updateStartLCD(true, "RTKF3F BS", "Ready to fly");
     //taskStateMachine.baseState(BS_WAITING);
     taskStateMachine.taskState(TASK_UNKNOWN);

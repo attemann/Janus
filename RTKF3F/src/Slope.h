@@ -6,7 +6,7 @@
 
 class Slope {   
 private:
-    int glider=1;
+    int glider=2;
     int angle=180;
     bool aBaseOnLeft = false;
 

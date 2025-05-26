@@ -12,10 +12,10 @@ int Slope::getGliderId() const {
 
 void Slope::incrementGliderId(int incr){ 
     glider += incr;
-    if (glider < 1) {
-        glider = MAX_GU_UNITS;
-    } else if (glider > MAX_GU_UNITS) {
-        glider = 1;
+    if (glider < 2) {
+        glider = MAX_GU_UNITS+1;
+    } else if (glider > MAX_GU_UNITS+1) {
+        glider = 2;
     }
 }
 
