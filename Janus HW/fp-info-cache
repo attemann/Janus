@@ -1,4 +1,4 @@
-25264832831747611
+25268329463201756
 Audio_Module
 Reverb_BTDR-1H
 Digital Reverberation Unit, http://www.belton.co.kr/inc/downfile.php?seq=17&file=pdf (footprint from http://www.uk-electronic.de/PDF/BTDR-1.pdf)
@@ -92400,6 +92400,13 @@ rotary encoder illuminated switch vertical
 9
 8
 SamacSys_Parts
+B3U3100P
+B3U-3100P-2
+Switch
+0
+3
+3
+SamacSys_Parts
 NE555DR
 D (R-PDSO-G8)
 Integrated Circuit
@@ -101499,3 +101506,10 @@ TinyS3
 0
 23
 23
+footprints
+XCVR_ESP32-C3-MINI-1U-N4
+
+
+0
+61
+61
