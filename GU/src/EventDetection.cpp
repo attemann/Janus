@@ -50,13 +50,13 @@ bool checkForCrossingEvent(const GNSSFix& fix, EventCode& event) {
 
   if (!wasBetweenBases && between) {
     wasBetweenBases = true;
-    event = (dA <= 0) ? EVT_CROSS_A_IN : EVT_CROSS_B_IN;
+    event = (dA <= 0) ? EventCode::EVT_CROSS_A_IN : EventCode::EVT_CROSS_B_IN;
     return true;
   }
 
   if (wasBetweenBases && !between) {
     wasBetweenBases = false;
-    event = (dA <= 0) ? EVT_CROSS_A_OUT : EVT_CROSS_B_OUT;
+    event = (dA <= 0) ? EventCode::EVT_CROSS_A_OUT : EventCode::EVT_CROSS_B_OUT;
     return true;
   }
 

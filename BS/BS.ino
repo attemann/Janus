@@ -5,26 +5,57 @@
 #include <Arduino.h>
 #include <RFM69.h>
 #include <LiquidCrystal_I2C.h>
+#include <Wire.h>
 
 #include <RTKF3F.h>
-#include "src/RTCMFwd.h"
+
 #include "src/StateMachine.h"
 #include "src/Receiver.h"
-#include "src/SurveyIn.h"
 #include "src/BSx.h"
 
-#define GNSS_BAUD 115200
-#define RX_RADIO_DIO0_PIN 6
 
-#define BUZZER_PIN 14
 
-RFM69 txRadio;  // RTCM to GU
+// ESP32-WROOM-32 Pinout
+
+// Radio RFM69HCW SDI
+#define RFM69_CS       5
+#define RFM69_IRQ      4
+#define RFM9_SCK      18
+#define RFM9_MISO     19
+#define RFM9_MOSI     23  
+
+
+
+//LCD I2C
+#define LCD_SDA       21
+#define LCD_SCL       22
+
+// Buttons, LED, Buzzer
+#define BUZZER_PIN    14
+#define BTN_MNU       32
+#define BTN_INC       25
+#define BTN_DEC       33
+#define BTN_ESC       26
+
+// Ledige pinner
+// GPIO0  (can be used, but keep HIGH at boot if not flashing)
+// GPIO2  (can be used, but has boot strapping role — keep LOW at boot)
+// GPIO1  (avoid using unless you know what you're doing — affects flash voltage selection
+// GPIO13
+// GPIO15 (has boot function — must be LOW at boot)
+// GPIO27
+// GPIO34 (input only)
+// GPIO35 (input only)
+// GPIO36(VP) (input only)
+// GPIO39(VN) (input only)
+
+
 RFM69 rxRadio;  // Events from GU
 
-bool txRadioReady = false;
+
 bool rxRadioReady = false;
 
-HardwareSerial& serialGPS = Serial2;
+
 volatile bool guMessageReceived = false;
 
 Slope slope;
@@ -38,20 +69,6 @@ const int numButtons = sizeof(buttonPins) / sizeof(buttonPins[0]);
 bool lastState[numButtons];
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-
-void IRAM_ATTR onGUMessageInterrupt() {
-    guMessageReceived = true;
-}
-
-void updateStartLCD(bool clear, String line1, String line2) {
-    if (clear) lcd.clear();
-    lcd.setCursor(0, 0); lcd.print(line1);
-    lcd.setCursor(0, 1); lcd.print(line2);
-
-    Serial.println("---");
-    Serial.println(line1);
-    Serial.println(line2);
-}
 
 void handleAllButtons() {
     for (int i = 0; i < numButtons; i++) {
@@ -74,6 +91,22 @@ void handleAllButtons() {
     }
 }
 
+void IRAM_ATTR onGUMessageInterrupt() {
+    guMessageReceived = true;
+}
+
+void updateStartLCD(bool clear, String line1, String line2) {
+    if (clear) lcd.clear();
+    lcd.setCursor(0, 0); lcd.print(line1);
+    lcd.setCursor(0, 1); lcd.print(line2);
+
+    Serial.println("---");
+    Serial.println(line1);
+    Serial.println(line2);
+}
+
+
+
 void setup() {
     Serial.begin(115200);
     while (!Serial);
@@ -85,22 +118,11 @@ void setup() {
         lastState[i] = digitalRead(buttonPins[i]);  // Initial status
     }
 
+    Wire.begin(LCD_SDA, LCD_SCL); // Set I2C pins for ESP32
     lcd.init();
     lcd.backlight();
 
-    // --- TX radio ---
-    updateStartLCD(true, "RTKF3F BS", "Init TX Radio");
-    if (!txRadio.initialize(RF69_868MHZ, BASE_NODE_ID, NETWORK_ID) || !verifyRadio(txRadio, "TX")) {
-        Serial.println("TX radio init failed");
-        updateStartLCD(true, "RTKF3F BS", "TX init fail");
-        //while (true) delay(1000);
-    }
-    else {
-        txRadio.setHighPower();
-        txRadio.setPowerLevel(31);
-        txRadio.setFrequency(BS_TX_FREQ);
-        txRadioReady = true;
-    }
+
 
     // --- RX radio ---
     updateStartLCD(true, "RTKF3F BS", "Init RX Radio");
@@ -116,44 +138,21 @@ void setup() {
         txRadioReady = true;
     }
 
-    attachInterrupt(digitalPinToInterrupt(RX_RADIO_DIO0_PIN), onGUMessageInterrupt, RISING);
+    attachInterrupt(digitalPinToInterrupt(RFM69_IRQ), onGUMessageInterrupt, RISING);
 
-    // --- GNSS UART ---
-    serialGPS.begin(GNSS_BAUD, SERIAL_8N1, 4, 5); // RX = GPIO4, TX = GPIO5
-    updateStartLCD(true, "RTKF3F BS", "Starting....");
-    delay(1000);
 
-    configureSurveyIn();
-    taskStateMachine.begin();
 
-    // --- Survey-in loop ---
-    unsigned long durationMs = 0;
-    float accuracyM = 0.0;
-    int numStar = 4;
-
-    while (!checkSurveyStatus(durationMs, accuracyM)) {
-        String line1 = "Survey-in " + generateStars(numStar);
-        String line2 = "T:" + String(durationMs) + "s A:" + String(accuracyM, 2) + "m";
-        updateStartLCD(false, line1, line2);
-        delay(300);
-        if (++numStar > 4) numStar = 0;
-    }
-
-    initRTCMForwarder(&serialGPS, &txRadio, NODE_ID_INIT);
-    updateStartLCD(true, "RTKF3F BS", "Ready to fly");
-    //taskStateMachine.baseState(BS_WAITING);
+    taskStateMachine.baseState(BS_WAITING);
     taskStateMachine.taskState(TASK_UNKNOWN);
 }
 
 void loop() {
 
-    
-
     handleAllButtons();
 
     taskStateMachine.setPilotOffset(5000+random(20), 5000+random(20), 0);
 
-    updateRTCMForwarder();
+
 
     if (guMessageReceived) {
         guMessageReceived = false;
@@ -162,10 +161,11 @@ void loop() {
         }
     }
 
-    if ((taskStateMachine.baseState() != BS_AIRBORNE)) {
+    //if ((taskStateMachine.baseState() != BS_AIRBORNE)) {
         taskStateMachine.updateLCD();
         oldBSState = taskStateMachine.baseState();
-    }
+    //}
 
     yield();
 }
+

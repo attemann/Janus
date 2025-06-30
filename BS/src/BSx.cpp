@@ -67,14 +67,3 @@ void debugButtons(int sim) {
   }
 }
 
-String generateStars(int count) {
-  count = constrain(count, 1, 5);
-  String stars = "";
-  for (int i = 0; i < count; i++) {
-    stars += '>';
-  }
-  while (stars.length() < 5) {
-    stars += ' ';
-  }
-  return stars;
-}

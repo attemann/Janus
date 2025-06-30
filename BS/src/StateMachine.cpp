@@ -4,6 +4,7 @@
 #include <LiquidCrystal_I2C.h>
 #include <RTKF3F.h>
 #include "StateMachine.h"
+#include "BSx.h"
 
 extern LiquidCrystal_I2C lcd;
 extern Slope slope;
@@ -22,9 +23,9 @@ void directionAndDistance(int n, int e, int d, int &angle, float &dist) {
     angle = (int)(round(angleDeg));
 }
 
-String formatTimeMSS(unsigned long seconds) {
-    unsigned int minutes = seconds / 60;
-    unsigned int secs = seconds % 60;
+String formatTimeMSS(unsigned long ms) {
+    unsigned int minutes = (ms/1000)/ 60;
+    unsigned int secs = (ms/1000) % 60;
     char buffer[12];  
     snprintf(buffer, sizeof(buffer), "%02u:%02u", minutes, secs);
     return String(buffer);
@@ -134,20 +135,20 @@ void StateMachine::handleEvent(EventCode event) {
 
 void StateMachine::handleButton(int buttonId) {
 
-    //Serial.print("Handling button ");
-    //switch(buttonId) {
-    //  case BTN_MNU: Serial.print("BTN_MNU"); break;
-    //    case BTN_INC: Serial.print("BTN_INC"); break;
-    //    case BTN_DEC: Serial.print("BTN_DEC"); break;
-    //    case BTN_ESC: Serial.print("BTN_ESC"); break;
-    //    default: Serial.print("???"); break;
-    //}
-    //Serial.print(", BS_STATE was ");
-    //Serial.print(bsState);
+    Serial.print("Handling button ");
+    switch(buttonId) {
+        case BTN_MNU: Serial.print("BTN_MNU"); break;
+        case BTN_INC: Serial.print("BTN_INC"); break;
+        case BTN_DEC: Serial.print("BTN_DEC"); break;
+        case BTN_ESC: Serial.print("BTN_ESC"); break;
+        default: Serial.print("???"); break;
+    }
+    Serial.print(", BS_STATE was ");
+    Serial.print(bsState);
 
     switch (buttonId) {
         case BTN_ESC:
-            bsState = BS_WAITING;
+            bsState = BS_AIRBORNE;
             bsTaskState = TASK_UNKNOWN;
             sendFlightSettings(slope);
             break;
@@ -171,7 +172,7 @@ void StateMachine::handleButton(int buttonId) {
                 case BS_SEL_A_RIGHT:    slope.toggleABaseSide(); break;
                 case BS_SEL_SLOPEANGLE: slope.incrementSlopeAngle(5); break;
                 case BS_SET_PLOC:       sendPosRequest(slope); break;
-                default: break;
+                default: simTask(); break;
             }
             break;
 
@@ -181,12 +182,12 @@ void StateMachine::handleButton(int buttonId) {
                 case BS_SEL_A_RIGHT:    slope.toggleABaseSide(); break;
                 case BS_SEL_SLOPEANGLE: slope.incrementSlopeAngle(-5); break;
                 case BS_SET_PLOC:       sendPosRequest(slope); break;
-                default: break;
+                default: simTask(); break;
             }
             break;
     }
-    // Serial.print(" now ");
-    // Serial.println(bsState);
+    Serial.print(" now ");
+    Serial.println(bsState);
 }
 
 void StateMachine::updateLCD() {
@@ -195,8 +196,11 @@ void StateMachine::updateLCD() {
     bool rtkFix = true; // TODO: actual fix status
     int numSats = 16;   // TODO: replace with real GNSS data
 
+    const char* stateText = nullptr;
+	String timeStr;
+
     // build line 1
-    snprintf(line1, sizeof(line1), "%s|%dsat|G%d|A%c",
+    snprintf(line1, sizeof(line1), "%s|%d st|G%d|A%c",
         rtkFix ? "RTK" : "GPS",
         numSats,
         slope.getGliderId(),
@@ -213,21 +217,15 @@ void StateMachine::updateLCD() {
         strcpy(line2, "On ground");
         break;
     case BS_AIRBORNE:
+        stateText = getTaskStateText(bsTaskState);
+
         if (bsTaskState != TASK_FINISHED) {
-            char line2[21];  // LCD-linje, 20 tegn + nullterminator
+            timeStr = formatTimeMSS((millis() - startTimestamp) / 1000);
 
-            const char* stateText = getTaskStateText(bsTaskState);
-            String timeStr = formatTimeMSS((millis() - startTimestamp) / 1000);
-
-            // Bygg strengen trygt
-            snprintf(line2, sizeof(line2), "Airb %s %s", stateText, timeStr.c_str());
+        } else {
+            timeStr = formatTimeSSS((finishTimestamp - startTimestamp) / 1000);
         }
-        else {
-            // Anta at formatTimeSSS() returnerer String – trekk ut c_str()
-            String timeStr = formatTimeSSS(finishTimestamp - startTimestamp);
-
-            snprintf(line2, sizeof(line2), "Fini %s", timeStr.c_str());
-        }
+        snprintf(line2, sizeof(line2), "%s %s", stateText, timeStr.c_str());
         break;
     case BS_SEL_GLIDER:
         snprintf(line2, sizeof(line2), "Sel glider <%d>", slope.getGliderId());
@@ -328,4 +326,52 @@ void StateMachine::setGliderId(int gliderId) {
 
 void StateMachine::setABaseLeft(bool isABaseLeft) {
     slope.setABaseLeft(isABaseLeft);
+}
+
+void StateMachine::simTask() {
+    switch (bsTaskState) {
+    case TASK_UNKNOWN:
+        bsTaskState = TASK_OUTSIDE_A;
+        break;
+    case TASK_OUTSIDE_A:
+        bsTaskState = TASK_STARTED;
+        break;
+    case TASK_STARTED:
+        startTimestamp = millis();
+        bsTaskState = TASK_TURN1;
+        break;
+    case TASK_TURN1:
+        bsTaskState = TASK_TURN2;
+        break;
+    case TASK_TURN2:
+        bsTaskState = TASK_TURN3;
+        break;
+    case TASK_TURN3:
+        bsTaskState = TASK_TURN4;
+        break;
+    case TASK_TURN4:
+        bsTaskState = TASK_TURN5;
+        break;
+    case TASK_TURN5:
+        bsTaskState = TASK_TURN6;
+        break;
+    case TASK_TURN6:
+        bsTaskState = TASK_TURN7;
+        break;
+    case TASK_TURN7:
+        bsTaskState = TASK_TURN8;
+        break;
+    case TASK_TURN8:
+        bsTaskState = TASK_TURN9;
+        break;
+    case TASK_TURN9:
+        bsTaskState = TASK_FINISHED;
+        break;
+    case TASK_FINISHED:
+        finishTimestamp = millis();
+        bsTaskState = TASK_UNKNOWN;
+        break;
+    default:
+        break;
+    }
 }

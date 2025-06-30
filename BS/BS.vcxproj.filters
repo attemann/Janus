@@ -21,16 +21,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="BS.ino" />
-    <ClCompile Include="src\RTCMFwd.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="src\SendCmd.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\StateMachine.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\SurveyIn.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\BSx.cpp">
@@ -44,16 +38,10 @@
     <ClInclude Include="__vm\.BS.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\RTCMFwd.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="src\SendCmd.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\StateMachine.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\SurveyIn.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\BSx.h">

@@ -5,9 +5,32 @@
 #ifndef RTKF3F_H
 #define RTKF3F_H
 
-#include "Const.h"
 #include "MessageTypes.h"
 #include "Slope.h"
+
+#define MAX_GU_UNITS 5
+
+#define SLOPELENGTH 100
+
+#define MSG_RTCM              0x01  // RTCM3 correction stream
+#define MSG_GU_GPSSETTINGS    0x02  // GUGPS settings
+#define MSG_FLIGHT_SETTINGS   0x03  // Settings for the slope
+#define MSG_REQ_POS           0x04  // BS request to GU for position
+
+#define BS_TX_FREQ 868100000
+#define BS_RX_FREQ 868200000
+
+#define BASE_NODE_ID   1
+#define NODE_ID_INIT   2
+#define NODE_BROADCAST 255
+#define NETWORK_ID     100
+
+#define RTCM_INTERVAL 1000 // 1 second
+
+// Const for airborne detection
+#define DETECTOR_BUFFER_SIZE 30           // 3 secs with 0.1s interval
+#define THRESHOLD_AIRBORNE 9.0f  // 3 m/s avg over 3 secs
+#define THRESHOLD_LANDED 1.0f    // 1 m/s avg over 3 secss
 
 struct GNSSFix {
 	float relNorth;   // meters
@@ -24,8 +47,7 @@ struct GNSSFix {
 	bool rtkFix;      // Bit 3: RTK fixed
 };
 
-enum BSState {
-	//  BS_BOOTING,
+enum class BSState {
 	BS_WAITING,
 	BS_ONGROUND,
 	BS_AIRBORNE,
@@ -35,7 +57,7 @@ enum BSState {
 	BS_SET_PLOC
 };
 
-enum BSTaskState {
+enum class BSTaskState {
 	TASK_UNKNOWN,
 	//  TASK_INSIDE_A,
 	TASK_OUTSIDE_A,
@@ -54,7 +76,7 @@ enum BSTaskState {
 
 // === Event codes (Bits 7–4 of Byte 1) ===
 // Events sent from Glider Unit (GU) to Base Station (BS)
-enum EventCode : uint8_t {
+enum class EventCode : uint8_t {
 	EVT_NONE = 0x0,  // Reserved / no event
 	EVT_CROSS_A_IN = 0x1,  // Cross A base into task
 	EVT_CROSS_A_OUT = 0x2,  // Cross A base out of task
@@ -89,9 +111,11 @@ constexpr uint8_t STATUS_DGNSS_USED = 0x10;
 // Byte 4: RESERVED = 0x00
 
 // === ACK codes ===
-enum AckCode : uint8_t {
+enum class AckCode : uint8_t {
 	ACK_OK = 0x00,
 	ACK_ERROR = 0x01,  // Optional future use
 };
+
+
 
 #endif

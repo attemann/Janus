@@ -35,9 +35,11 @@ uint8_t fixStatus(GNSSFix fix) {
 }
 
 void txEvent(EventCode code, uint8_t status_flags) {
-  uint8_t msg[6];
-  encodeEventMessage(msg, slope.getGliderId(), code, status_flags);
-  sendWithReturnFreq(BASE_NODE_ID, msg, sizeof(msg));
+    uint8_t msg[6];
+    encodeEventMessage(msg, slope.getGliderId(),
+        static_cast<uint8_t>(code),  // cast added
+        status_flags);
+    sendWithReturnFreq(BASE_NODE_ID, msg, sizeof(msg));
 }
 
 void txRelPos(GNSSFix fix, bool isRelativeToBase) {

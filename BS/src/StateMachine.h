@@ -24,6 +24,7 @@ public:
     void setGliderId(int gliderId);
     void setPilotOffset(int n, int e, int d);
     void setABaseLeft(bool isABaseLeft);
+    void simTask();
 
 private:
     void nextState();

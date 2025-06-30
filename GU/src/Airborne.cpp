@@ -50,9 +50,9 @@ void AirborneDetector::update(float north, float east) {
 
   if (!airborne && dist > thresholdAirborne) {
     airborne = true;
-    txEvent(EVT_AIRBORNE,0);
+    txEvent(EventCode::EVT_AIRBORNE,0);
   } else if (airborne && dist < thresholdLanded) {
     airborne = false;
-    txEvent(EVT_LANDED,0);
+    txEvent(EventCode::EVT_LANDED,0);
   }
 }

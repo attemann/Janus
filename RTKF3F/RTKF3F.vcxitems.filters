@@ -26,9 +26,6 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)src\Slope.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="$(MSBuildThisFileDirectory)src\Const.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)src\MessageTypes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
