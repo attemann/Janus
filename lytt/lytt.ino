@@ -1,7 +1,7 @@
 #include <RFM69.h>
 #include <SPI.h>
 
-#define NODE_ID        2        // This is the Gateway ID (receiver)
+#define NODE_ID        1        // This is the Gateway ID (receiver)
 #define NETWORK_ID     100
 #define FREQUENCY      RF69_868MHZ
 
@@ -9,27 +9,32 @@
 //#define RFM69_IRQ      9
 //#define RFM69_RST      -1
 
-#define RFM69_CS       1
-#define RFM69_IRQ      2
+#define RFM69_CS       5
+#define RFM69_IRQ      4
 #define RFM69_IRQN     digitalPinToInterrupt(RFM69_IRQ)
 #define RFM69_RST      -1
 
-  int PIN_SCK  = 19;
-  int PIN_MISO = 20;
-  int PIN_MOSI = 18;
+  int PIN_SCK  = 18;
+  int PIN_MISO = 19;
+  int PIN_MOSI = 23;
 
 
 #define LED_BUILTIN 2
 
-RFM69 radio(RFM69_CS, RFM69_IRQ, true);
+RFM69 radio(5, 4, true);
 
 void setup() {
+
+    pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH); // Test LED (adjust for active-low if needed)
+  delay(1000);
+  digitalWrite(LED_BUILTIN, LOW);
   Serial.begin(115200);
   delay(10);
 
   //SPI.begin( 12, 13, 11, 10); // Explicit SPI pins, matching sender
     // Start SPI with custom pins
-  SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, RFM69_CS);
+ // SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, RFM69_CS);
 
   if (RFM69_RST != -1) {
     pinMode(RFM69_RST, OUTPUT);
