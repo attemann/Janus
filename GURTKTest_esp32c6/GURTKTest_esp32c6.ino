@@ -1,5 +1,5 @@
-#define RXD2 16  // UM980 TX → ESP32 RXD2 (D7)
-#define TXD2 17  // UM980 RX ← ESP32 TXD2 (D6)
+#define RXD2 D7  // UM980 TX → ESP32 RXD2 (D7)
+#define TXD2 D6  // UM980 RX ← ESP32 TXD2 (D6)
 
 #define UM980_BAUD 115200
 
@@ -8,6 +8,9 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   Serial.println("Initializing...");
+
+  Serial.println("D7="+String(D7));
+  Serial.println("D6="+String(D6));
 
   // Start UART to UM980
   Serial1.begin(UM980_BAUD, SERIAL_8N1, RXD2, TXD2);

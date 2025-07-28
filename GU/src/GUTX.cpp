@@ -12,13 +12,13 @@ extern GNSSFix lastFix;
 void sendWithReturnFreq(uint8_t dest, const uint8_t* msg, uint8_t len) {
   // Optional: stabilize before frequency change
   rxtxRadio.setMode(RF69_MODE_SLEEP);
-  rxtxRadio.setFrequency(BS_RX_FREQ);
+  rxtxRadio.setFrequency(GU_TX_FREQ);
   rxtxRadio.setMode(RF69_MODE_TX);
 
   rxtxRadio.send(dest, msg, len);
 
   rxtxRadio.setMode(RF69_MODE_SLEEP);
-  rxtxRadio.setFrequency(BS_TX_FREQ);
+  rxtxRadio.setFrequency(RTCM_TX_FREQ);
   rxtxRadio.setMode(RF69_MODE_RX);
 }
 
@@ -39,7 +39,7 @@ void txEvent(EventCode code, uint8_t status_flags) {
     encodeEventMessage(msg, slope.getGliderId(),
         static_cast<uint8_t>(code),  // cast added
         status_flags);
-    sendWithReturnFreq(BASE_NODE_ID, msg, sizeof(msg));
+    sendWithReturnFreq(NODEID_BS, msg, sizeof(msg));
 }
 
 void txRelPos(GNSSFix fix, bool isRelativeToBase) {
@@ -61,11 +61,11 @@ void txRelPos(GNSSFix fix, bool isRelativeToBase) {
   int16_t d_dm = d / 10;
 
   encodeRelPosMessage(msg, slope.getGliderId(), n_dm, e_dm, d_dm, fixStatus(fix));
-  sendWithReturnFreq(BASE_NODE_ID, msg, sizeof(msg));
+  sendWithReturnFreq(NODEID_BS, msg, sizeof(msg));
 }
 
 void txMsg(uint8_t msgCode, uint8_t d) {
   uint8_t msg[6];
   encodeMiscMessage(msg, slope.getGliderId(), d);
-  sendWithReturnFreq(BASE_NODE_ID, msg, sizeof(msg));
+  sendWithReturnFreq(NODEID_BS, msg, sizeof(msg));
 }

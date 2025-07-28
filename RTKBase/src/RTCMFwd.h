@@ -1,9 +1,16 @@
-// RTCMForwarder.h
+// RTCMFwd.h
 #pragma once
+
+#ifndef RTCMFWD_H
+#define RTCMFWD_H
+
 
 #include <Arduino.h>
 #include <RFM69.h>
 
-void initRTCMForwarder(HardwareSerial* input, RFM69* radio, uint8_t targetNode);
+bool verifyRadio(RFM69& radio);
+
+void initRTCMForwarder(HardwareSerial* input, RFM69* radio);
 void updateRTCMForwarder();
-bool verifyRadio(RFM69& radio, const char* label);
+
+#endif

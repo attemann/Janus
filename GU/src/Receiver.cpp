@@ -12,12 +12,14 @@ void handleRadioMessage(uint8_t* data, uint8_t len) {
 
   switch (data[0]) {
     case MSG_RTCM:
+	Serial.println("Received RTCM message");
       if (len > 1) {
         Serial2.write(data + 1, len - 1);
       }
       break;
 
     case MSG_FLIGHT_SETTINGS:
+       Serial.println("Received Flight settings");
       if (len >= 9) {
         uint16_t angle10 = data[1] | (data[2] << 8);
         bool aBaseLeft = data[3];
@@ -37,11 +39,13 @@ void handleRadioMessage(uint8_t* data, uint8_t len) {
 
     case MSG_REQ_POS: {
       // send relative pos to base (true), not pilot (false)
+       Serial.println("Received position request");
       txRelPos(lastFix, true);
       break;
     }
 
     default:
+        Serial.println("Received unknown request");
       break;
   }
 }

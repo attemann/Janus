@@ -10,9 +10,9 @@
 #include <Wire.h>
 #include <SparkFun_Unicore_GNSS_Arduino_Library.h> //http://librarymanager/All#SparkFun_Unicore_GNSS
 
-//#include <RTKF3F.h>
+#include <RTKF3F.h>
 #include "LCD.h"
-
+#include "src/RTCMFwd.h"
 #include "TwoButtonMenu.h"
 
 #define APPNAME "RTKBase 1.0"
@@ -44,6 +44,9 @@ bool menuHeld = false;
 #define RFM69_RST      -1
 RFM69 radio(RFM69_CS, RFM69_IRQ, true); // true = SPI driver override
 
+//unsigned long airTime = 0;
+//unsigned long airInit = 0;
+
 // GPS UART PINS
 #define GNSS_BAUD 115200
 #define UART_TX       17
@@ -53,11 +56,11 @@ RFM69 radio(RFM69_CS, RFM69_IRQ, true); // true = SPI driver override
 UM980 myGNSS;
 HardwareSerial SerialGNSS(1); //Use UART1 on the ESP32
 
-#define BUFFER_SIZE 3000
-uint8_t rtcmBuffer[BUFFER_SIZE];
-uint16_t rtcmIndex = 0;
-bool readingRtcm = false;
-uint16_t expectedLength = 0;
+//#define BUFFER_SIZE 3000
+//uint8_t rtcmBuffer[BUFFER_SIZE];
+//uint16_t rtcmIndex = 0;
+//bool readingRtcm = false;
+//uint16_t expectedLength = 0;
 
 #define SURVEYINTIME 15
 
@@ -110,7 +113,6 @@ int detectUM980Port(HardwareSerial& gnssSerial) {
     Serial.println("❌ No UM980 COM port responded.");
     return -1; // None found
 }
-
 
 void applySettings() {
     menuActive = false;
@@ -179,17 +181,23 @@ void setup() {
 
     pinMode(RFM69_IRQ, INPUT);
 
-    if (!radio.initialize(RF69_868MHZ, 1, 100)) {
-        Serial.println("RFM69 init failed!");
-        while (1) {
-            Serial.println("Stuck in init failure loop");
-            delay(1000);
-        }
+    if (!radio.initialize(RF69_868MHZ, NODEID_RTKBASE, NETWORK_ID)) {
+        Serial.println(" > Stuck in radio init failure loop, freeze");
+        while (1);
     }
     else {
         Serial.println("> Radio init ok");
     }
 
+    if (verifyRadio(radio)) {
+        Serial.println("> Radio verified");
+    }
+    else {
+        Serial.println("> Radio verification failed, check wiring and settings. Freeze");
+        while (1); // Lock system if radio verification fails
+	}
+
+	radio.setFrequency(RTCM_TX_FREQ); // Set frequency for RTCM
     radio.setHighPower();
     radio.encrypt(NULL); // No encryption, matching sender
 
@@ -224,7 +232,6 @@ void setup() {
         Serial.println("Failed to detect UM980 port.");
     }
 
-
     baseState = BASESTATE::BASE_STARTING;
 }
 
@@ -238,7 +245,7 @@ String cmd = "";
 //int fixType = 0;
 String line = "";
 
-    //myGNSS.update();      // Parses binary messages
+//unsigned long airBegin = 0;
 
 switch (baseState) {
 case BASESTATE::BASE_STARTING: {
@@ -275,7 +282,7 @@ case BASESTATE::BASE_GETTINGFIX: {
         line1 = String(fixType) + " " + gnggaFixTypeToString(fixType);
         line2 = "SIV: " + String(SIV);
 
-        Serial.print("baseState: BASE_GETTINGFIX "+ line1);
+        Serial.print("baseState: BASE_GETTINGFIX " + line1);
         Serial.println(", " + line2);
 
         updateLCD(false, line1, line2);
@@ -298,6 +305,8 @@ case BASESTATE::BASE_GETTINGFIX: {
         }
         break;
     }
+    break;
+}
 case BASESTATE::BASE_SURVEYING: {
     //Serial.println("baseState: BASE_SURVEYING");
     //Serial.println("fixType="+String(fixType));
@@ -314,7 +323,7 @@ case BASESTATE::BASE_SURVEYING: {
 
     // Survey complete — configure base output
     Serial.println("BASE_SURVEYING: Survey complete. Enabling RTCM...");
-    
+
     allOk = true;
     allOk &= myGNSS.sendCommand("unlog");
     allOk &= myGNSS.sendCommand("rtcm1006 com2 10");
@@ -326,21 +335,13 @@ case BASESTATE::BASE_SURVEYING: {
     allOk &= myGNSS.sendCommand("saveconfig");
     if (allOk) {
         Serial.println("BASE_SURVEYING: RTCM config successful. Entering OPERATING mode.");
+        initRTCMForwarder(&SerialGNSS, &radio);
         baseState = BASESTATE::BASE_OPERATING;
     }
     else {
         Serial.println("BASE_SURVEYING: RTCM config fail. Freezing.");
         while (1); // Lock system if config fails
     }
-    /*
-    myGNSS.setRTCMPortMessage("rtcm1006", "com2", 10);
-    myGNSS.setRTCMPortMessage("rtcm1033", "com2", 10);
-    myGNSS.setRTCMPortMessage("rtcm1074", "com2", 1);
-    myGNSS.setRTCMPortMessage("rtcm1124", "com2", 1);
-    myGNSS.setRTCMPortMessage("rtcm1084", "com2", 1);
-    myGNSS.setRTCMPortMessage("rtcm1094", "com2", 1);
-    */
-    baseState = BASESTATE::BASE_OPERATING;
     break;
 }
 case BASESTATE::BASE_OPERATING: {
@@ -349,46 +350,7 @@ case BASESTATE::BASE_OPERATING: {
     line2 = "***";
     updateLCD(false, line1, line2);
 
-    while (SerialGNSS.available()) {
-        uint8_t b = SerialGNSS.read();
-
-        Serial.write(SerialGNSS.read());
-
-        //Serial.printf("Raw: 0x%02X\n", b);
-
-        // Detect RTCM3 start
-        if (!readingRtcm) {
-            if (b == 0xD3) {
-                rtcmBuffer[0] = b;
-                rtcmIndex = 1;
-                readingRtcm = true;
-            }
-        }
-        else {
-            if (rtcmIndex < BUFFER_SIZE - 1) {
-                rtcmBuffer[rtcmIndex++] = b;
-
-                // Once we have enough for length (after 3 bytes)
-                if (rtcmIndex == 3) {
-                    expectedLength = ((rtcmBuffer[1] & 0x03) << 8) | rtcmBuffer[2];
-                    expectedLength += 6; // Add header (3) + CRC (3)
-                }
-
-                if (rtcmIndex == expectedLength) {
-                    // Full RTCM message received
-                    radio.send(255, rtcmBuffer, rtcmIndex);
-                    Serial.printf("Sent RTCM (%d bytes)\n", rtcmIndex);
-                    readingRtcm = false;
-                    rtcmIndex = 0;
-                }
-            }
-            else {
-                // Overflow
-                readingRtcm = false;
-                rtcmIndex = 0;
-            }
-        }
-    }
+    updateRTCMForwarder();
 
     break;
 }
@@ -397,34 +359,33 @@ default:
 }
 
 
-}
-
 delay(100);
-    /* if (!menuActive) return;
-
-    // MENU button: long vs short press
-    if (!digitalRead(BTN_MENU)) {
-        if (menuPressStart == 0) {
-            menuPressStart = millis();
-        }
-        else if (!menuHeld && millis() - menuPressStart > HOLD_TIME) {
-            menuHeld = true;
-            applySettings();  // Long press
-        }
-    } else {
-        if (menuPressStart > 0 && !menuHeld) {
-            menu.nextItem();  // Short press
-        }
-        menuPressStart = 0;
-        menuHeld = false;
-    }
-
-    // SELECT button (cycle value)
-    if (!digitalRead(BTN_SELECT)) {
-        menu.selectValue();
-        delay(200);
-    }
-    */
-
 
 }
+
+/* if (!menuActive) return;
+
+// MENU button: long vs short press
+if (!digitalRead(BTN_MENU)) {
+    if (menuPressStart == 0) {
+        menuPressStart = millis();
+    }
+    else if (!menuHeld && millis() - menuPressStart > HOLD_TIME) {
+        menuHeld = true;
+        applySettings();  // Long press
+    }
+} else {
+    if (menuPressStart > 0 && !menuHeld) {
+        menu.nextItem();  // Short press
+    }
+    menuPressStart = 0;
+    menuHeld = false;
+}
+
+// SELECT button (cycle value)
+if (!digitalRead(BTN_SELECT)) {
+    menu.selectValue();
+    delay(200);
+}
+*/
+

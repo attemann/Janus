@@ -5,7 +5,6 @@
 #define GUTX_H
 
   #include <Arduino.h>
-  //#include <RFM69.h>
   #include <RTKF3F.h>
 
   // Sends a 5-byte event packet from GU to BS

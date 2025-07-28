@@ -104,6 +104,7 @@ Global
 	EndGlobalSection
 	GlobalSection(SharedMSBuildProjectFiles) = preSolution
 		RTKF3F\RTKF3F.vcxitems*{34fd9417-1955-4843-bb33-abbc458b1f71}*SharedItemsImports = 4
+		RTKF3F\RTKF3F.vcxitems*{8ca495c3-472b-4f72-bc53-6f1a9a507455}*SharedItemsImports = 4
 		RTKF3F\RTKF3F.vcxitems*{8f8217f7-1123-477c-8dbb-03e8b3d88936}*SharedItemsImports = 4
 		RTKF3F\RTKF3F.vcxitems*{c1024f6f-755e-4709-adc0-2833394e992c}*SharedItemsImports = 9
 	EndGlobalSection

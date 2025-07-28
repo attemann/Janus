@@ -12,40 +12,6 @@
 
 extern Slope slope;
 
-void initGPS() {
-  // GNSS UART must already be initialized (e.g., Serial2.begin())
-
-  // Optional: Clear old config
-  Serial2.println("$CFG-CFG=RESET");
-  delay(50);
-
-  // Set ROVER mode
-  Serial2.println("$CFG-RTK-MODE=ROVER");
-  delay(20);
-
-  // Dynamic model: Airborne <2g
-  Serial2.println("$CFG-DYNMODEL=AIRBORNE_2G");
-  delay(20);
-
-  // 25 Hz output rate
-  Serial2.println("$CFG-RATE=25");
-  delay(20);
-
-  // Enable NAV-RELPOSNED output
-  Serial2.println("$CFG-MSG=UART1,NAV-RELPOSNED,25");
-  delay(20);
-
-  // Disable NMEA (optional)
-  Serial2.println("$CFG-MSG=UART1,GGA,0");
-  Serial2.println("$CFG-MSG=UART1,RMC,0");
-  Serial2.println("$CFG-MSG=UART1,GSV,0");
-  Serial2.println("$CFG-MSG=UART1,GSA,0");
-  delay(20);
-
-  // Save config
-  Serial2.println("$CFG-CFG=SAVE");
-  delay(50);
-}
 
 bool readGNSSFix(GNSSFix& fix) {
   static uint8_t buffer[48];

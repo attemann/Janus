@@ -1,47 +1,74 @@
-// RTCMForwarder.cpp - BS module for forwarding RTCM3 corrections over RFM69
+// RTCMFwd.cpp - BS module for forwarding RTCM3 corrections over RFM69
 #include <RTKF3F.h>
 #include "RTCMFwd.h"
-#include <LiquidCrystal_I2C.h>
 
 #define REG_VERSION 0x10
 #define EXPECTED_RFM69_VERSION 0x24
 
 static HardwareSerial* rtcmInput = nullptr;
 static RFM69* rtcmRadio = nullptr;
-static uint8_t rtcmTargetNode = 0;
-static unsigned long lastSendTime = 0;
 
-extern LiquidCrystal_I2C lcd;
+/* while (SerialGNSS.available()) {
+           uint8_t b = SerialGNSS.read();
 
-bool verifyRadio(RFM69& radio, const char* label) {
+       // Detect RTCM3 start
+
+       if (!readingRtcm) {
+           if (b == 0xD3) {
+               rtcmBuffer[0] = b;
+               rtcmIndex = 1;
+               readingRtcm = true;
+           }
+       }
+       else {
+           if (rtcmIndex < BUFFER_SIZE - 1) {
+               rtcmBuffer[rtcmIndex++] = b;
+
+               // Once we have enough for length (after 3 bytes)
+               if (rtcmIndex == 3) {
+                   expectedLength = ((rtcmBuffer[1] & 0x03) << 8) | rtcmBuffer[2];
+                   expectedLength += 6; // Add header (3) + CRC (3)
+               }
+
+               if (rtcmIndex == expectedLength) {
+                   // Full RTCM message received
+                   airBegin = millis();
+                   radio.send(255, rtcmBuffer, rtcmIndex); // 255 = Braodcast
+                   airTime += millis() - airBegin;
+                   Serial.printf("Sent RTCM (%d bytes) %lu ms, %.2f %%\n", rtcmIndex, (unsigned long)airTime, 100.0 * airTime / (millis()-airInit));
+                   readingRtcm = false;
+                   rtcmIndex = 0;
+               }
+           }
+           else {
+               // Overflow
+               readingRtcm = false;
+               rtcmIndex = 0;
+           }
+       }
+   }
+   */
+
+bool verifyRadio(RFM69& radio) {
     uint8_t version = radio.readReg(REG_VERSION);
     if (version != EXPECTED_RFM69_VERSION) {
-        Serial.printf("%s radio not detected! REG_VERSION = 0x%02X\n", label, version);
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print(String(label) + " Init");
-        lcd.setCursor(0, 1);
-        lcd.print("FAILED");
+        Serial.printf("verifyRadio: Unexpected RFM69 version 0x%02X (expected 0x%02X)\n", version, EXPECTED_RFM69_VERSION);
         return false;
     }
     return true;
 }
 
-void initRTCMForwarder(HardwareSerial* input, RFM69* radio, uint8_t targetNode) {
+void initRTCMForwarder(HardwareSerial* input, RFM69* radio) {
   rtcmInput = input;
   rtcmRadio = radio;
-  rtcmTargetNode = targetNode;
-  lastSendTime = 0;
 }
 
+// Serial.printf("Sent RTCM (%d bytes) %lu ms, %.2f %%\n", rtcmIndex, (unsigned long)airTime, 100.0 * airTime / (millis()-airInit));         
 void updateRTCMForwarder() {
   if (!rtcmInput || !rtcmRadio) return;
 
-  const unsigned long now = millis();
-  if (now - lastSendTime < RTCM_INTERVAL) return;  // 1 Hz limit
-
   if (rtcmInput->available()) {
-    uint8_t packet[64];
+    uint8_t packet[1000];
     size_t len = 0;
 
     packet[0] = MSG_RTCM;  // Prefix with message type
@@ -51,8 +78,8 @@ void updateRTCMForwarder() {
     }
 
     if (len > 0) {
-      rtcmRadio->send(rtcmTargetNode, packet, len + 1);
-      lastSendTime = now;
+      rtcmRadio->send(255, packet, len + 1);
+	  Serial.printf("Sent RTCM (%zu bytes)\n", len + 1);
     }
   }
 }

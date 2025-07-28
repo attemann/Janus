@@ -5,6 +5,7 @@
 #define AIRBORNE_DETECTOR_H
 
     #include <Arduino.h>
+    #include <RTKF3F.h>
 
     class AirborneDetector {
     public:

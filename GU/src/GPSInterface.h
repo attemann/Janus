@@ -6,7 +6,6 @@
 
   #include <RTKF3F.h>
 
-  void initGPS();
   bool readGNSSFix(GNSSFix& fix);
 
 #endif

@@ -18,18 +18,18 @@
 #define MSG_REQ_POS           0x04  // BS request to GU for position
 
 #define RTCM_TX_FREQ 868100000
-#define BS_RX_FREQ 868200000
+#define GU_TX_FREQ 868200000
 
 #define NODEID_RTKBASE   1
-#define NODEID_INIT		 2
+#define NODEID_BS		 2
+#define NODEID_GU		 3
 #define NETWORK_ID		 100
-
 // Const for airborne detection
 #define DETECTOR_BUFFER_SIZE 30           // 3 secs with 0.1s interval
 #define THRESHOLD_AIRBORNE 9.0f  // 3 m/s avg over 3 secs
 #define THRESHOLD_LANDED 1.0f    // 1 m/s avg over 3 secss
 
-struct GNSSFix {1
+struct GNSSFix {
 	float relNorth;   // meters
 	float relEast;
 	float relDown;
