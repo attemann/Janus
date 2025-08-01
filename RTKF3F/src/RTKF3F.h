@@ -5,8 +5,8 @@
 #ifndef RTKF3F_H
 #define RTKF3F_H
 
-#include <HardwareSerial.h>
-#include <RFM69.h>
+#include "GNSSModule.h"
+#include "RadioModule.h"
 
 #include "MessageTypes.h"
 #include "Slope.h"
@@ -27,63 +27,23 @@
 #define NODEID_BS		 2
 #define NODEID_GU		 3
 #define NETWORK_ID		 100
+
+// MISC
+#define SURVEYINTIME 15
+
+
 // Const for airborne detection
 #define DETECTOR_BUFFER_SIZE 30           // 3 secs with 0.1s interval
 #define THRESHOLD_AIRBORNE 9.0f  // 3 m/s avg over 3 secs
 #define THRESHOLD_LANDED 1.0f    // 1 m/s avg over 3 secs
 
-extern HardwareSerial SerialGNSS;  // Declaration only
-extern RFM69 radio;  // Declaration only
+// UBX sync bytes and message details
+#define UBX_SYNC1            0xB5
+#define UBX_SYNC2            0x62
+#define UBX_CLASS_NAV        0x01
+#define UBX_ID_RELPOSNED     0x3C
+#define UBX_RELPOSNED_LEN    40
 
-struct GNSSFix {
-	// ⬅️ Add these for time parsing and printing
-	int hour = 0;
-	int minute = 0;
-	float second = 0;
-
-	// From GNGGA
-	float lat;         // Decimal degrees
-	float lon;         // Decimal degrees
-	float alt;         // Altitude in meters
-
-	// From UBX-RELPOPNED (optional/legacy)
-	float relNorth;    // Relative North (m)
-	float relEast;     // Relative East (m)
-	float relDown;     // Relative Down (m)
-
-	float adjNorth;    // Adjusted North (m), relative to pilot or reference
-	float adjEast;
-	float adjDown;
-
-	int numSV = 0;      // Satellites in view
-	int HDOP = 0;        // Horizontal Dilution of Precision (HDOP) in cm
-	int fixType = 0;    // Raw fix type
-
-	// Fix flags
-	bool gpsFix;       // True if GNSS fix is valid (GGA fix quality > 0)
-	bool diffUsed;     // Differential corrections used (GGA fix quality >= 2)
-	bool rtkFloat;     // RTK float (GGA fix quality == 5)
-	bool rtkFix;       // RTK fixed (GGA fix quality == 4)
-};
-
-void monitorSerial(HardwareSerial& gnssSerial, String c,  int wait);
-int detectUM980Port(HardwareSerial& gnssSerial);
-const char* getRTCMMessageName(uint16_t type);
-uint16_t getBits(const uint8_t* buffer, int startBit, int bitLen);
-bool readGNSSData(GNSSFix& fix);
-bool verifyRadio(RFM69& radio);
-void updateRTCMForwarder();
-bool isValidRTCM(const uint8_t* rtcm, size_t totalLen);
-
-enum class BSState {
-	BS_WAITING,
-	BS_ONGROUND,
-	BS_AIRBORNE,
-	BS_SEL_GLIDER,
-	BS_SEL_A_RIGHT,
-	BS_SEL_SLOPEANGLE,
-	BS_SET_PLOC
-};
 
 enum class BSTaskState {
 	TASK_UNKNOWN,
@@ -142,86 +102,6 @@ constexpr uint8_t STATUS_DGNSS_USED = 0x10;
 enum class AckCode : uint8_t {
 	ACK_OK = 0x00,
 	ACK_ERROR = 0x01,  // Optional future use
-};
-
-class RTCM_Fragmenter {
-public:
-	static const uint8_t MAX_PAYLOAD = 61; // Safe max per RFM69
-	static const uint8_t MAX_TOTAL_LEN = 255; // 8-bit length
-
-	// Send a long RTCM message, broken into chunks
-	static void sendFragmented(RFM69& radio, uint8_t destId, const uint8_t* data, size_t len) {
-		if (len > MAX_TOTAL_LEN) return;  // too big
-
-		uint8_t packet[MAX_PAYLOAD];
-		uint8_t totalChunks = (len + MAX_PAYLOAD - 1) / MAX_PAYLOAD;
-
-		for (uint8_t i = 0; i < totalChunks; ++i) {
-			size_t offset = i * MAX_PAYLOAD;
-			size_t chunkLen = min((size_t)MAX_PAYLOAD, len - offset);
-
-			packet[0] = 0xA0;              // Fragment marker
-			packet[1] = totalChunks;      // Total
-			packet[2] = i;                // Index
-
-			memcpy(packet + 3, data + offset, chunkLen);
-			radio.send(destId, packet, chunkLen + 3);
-			delay(5);  // throttle
-		}
-	}
-};
-
-class RTCM_Reassembler {
-public:
-	static const uint8_t MAX_FRAGMENTS = 10;
-	static const uint16_t MAX_TOTAL_LEN = 610; // MAX_FRAGMENTS * MAX_PAYLOAD
-
-	RTCM_Reassembler() : receivedCount(0), totalExpected(0), complete(false) {
-		memset(fragmentReceived, 0, sizeof(fragmentReceived));
-	}
-
-	// Feed each incoming fragment here
-	void acceptFragment(const uint8_t* data, size_t len) {
-		if (len < 4 || data[0] != 0xA0) return; // invalid
-
-		uint8_t total = data[1];
-		uint8_t index = data[2];
-		if (total > MAX_FRAGMENTS || index >= total) return;
-
-		if (index == 0) {
-			totalExpected = total;
-			receivedCount = 0;
-			complete = false;
-			memset(fragmentReceived, 0, sizeof(fragmentReceived));
-		}
-
-		size_t fragLen = len - 3;
-		memcpy(buffer + index * RTCM_Fragmenter::MAX_PAYLOAD, data + 3, fragLen);
-		fragmentReceived[index] = fragLen;
-		receivedCount++;
-
-		if (receivedCount == totalExpected) {
-			size_t totalLen = 0;
-			for (uint8_t i = 0; i < totalExpected; ++i) {
-				totalLen += fragmentReceived[i];
-			}
-			this->length = totalLen;
-			complete = true;
-		}
-	}
-
-	bool isComplete() const { return complete; }
-	const uint8_t* getData() const { return buffer; }
-	size_t getLength() const { return length; }
-	void reset() { complete = false; receivedCount = 0; }
-
-private:
-	uint8_t buffer[MAX_TOTAL_LEN];
-	uint8_t fragmentReceived[MAX_FRAGMENTS];
-	uint8_t receivedCount;
-	uint8_t totalExpected;
-	size_t length;
-	bool complete;
 };
 
 #endif

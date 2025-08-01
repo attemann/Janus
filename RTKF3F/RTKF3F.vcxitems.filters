@@ -21,7 +21,10 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\Slope.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="$(MSBuildThisFileDirectory)src\RTKF3F.cpp">
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\GNSSModule.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\RadioModule.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -30,6 +33,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)src\MessageTypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\GNSSModule.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\RadioModule.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -1,0 +1,351 @@
+// GNSSModule.cpp
+#include <Arduino.h>    
+#include <RFM69.h>
+#include <HardwareSerial.h>
+#include "GNSSModule.h"
+
+GNSSModule::GNSSModule(HardwareSerial& serial)
+    : _serial(serial), _nmeaIdx(0) {
+}
+
+void GNSSModule::begin(uint32_t baud, int rx, int tx) {
+    _serial.begin(baud, SERIAL_8N1, rx,tx);
+}
+
+int GNSSModule::detectUARTPort() {
+    const char* testCommands[] = {
+        "versiona com1",
+        "versiona com2",
+        "versiona com3"
+    };
+
+    for (int port = 1; port <= 3; port++) {
+        _serial.flush(); // Clear any previous data
+        delay(100);
+        _serial.print(testCommands[port - 1]);
+        _serial.print("\r\n");
+
+        unsigned long startTime = millis();
+        String response = "";
+
+        while (millis() - startTime < COMMANDDELAY) {
+            while (_serial.available()) {
+                char c = _serial.read();
+                response += c;
+            }
+        }
+
+        if (response.indexOf("VERSIONA") != -1 || response.indexOf("#VERSIONA") != -1) {
+            return port;
+        }
+    }
+    return 0; // None found
+}
+
+bool GNSSModule::init() {
+
+    Serial.println("UM980 GNSS init ok");
+
+    sendCommand("unlog\r\n");
+    sendCommand("gpgga com2 1\r\n");
+    sendCommand("saveconfig\r\n");
+
+    return true;
+}
+
+void GNSSModule::sendCommand(const String& command) {
+    Serial.print("GPS: Sending command: ");
+    Serial.println(command);
+    unsigned long start = millis();
+    _serial.print(command);
+    while ((millis() - start) < COMMANDDELAY) {
+        if (_serial.available()) Serial.write(_serial.read());
+    }
+
+}
+
+bool GNSSModule::readFix(GNSSFix& fix) {
+    while (_serial.available()) {
+        char c = _serial.read();
+
+        if (c == '$') {
+            _nmeaIdx = 0;
+        }
+
+        if (_nmeaIdx < sizeof(_nmeaBuffer) - 1) {
+            _nmeaBuffer[_nmeaIdx++] = c;
+        }
+
+        if (c == '\n' && _nmeaIdx > 6) {
+            _nmeaBuffer[_nmeaIdx] = '\0';
+            _nmeaIdx = 0;
+
+            if (strncmp(_nmeaBuffer, "$GNGGA", 6) == 0) {
+                return parseGGA(_nmeaBuffer, fix);
+            }
+        }
+    }
+    return false;
+}
+
+String GNSSModule::fixTypeToString(int fixType) {
+    switch (fixType) {
+    case 0: return "Inv. (no fix)";
+    case 1: return "GPS fix";
+    case 2: return "DGPS fix";
+    case 3: return "PPS fix";
+    case 4: return "RTK Float";
+    case 5: return "RTK Fixed";
+    case 6: return "Dead Reckoning";
+    case 7: return "Manual Input Mode";
+    case 8: return "Simulation Mode";
+    default: return "Other Fix Type";
+    }
+}
+
+bool GNSSModule::readRTCM(uint8_t* buffer, size_t& len) {
+    while (_serial.available()) {
+        if (_serial.read() != 0xD3) continue;
+
+        while (_serial.available() < 2);
+        uint8_t lenH = _serial.read();
+        uint8_t lenL = _serial.read();
+        uint16_t payloadLen = ((lenH & 0x03) << 8) | lenL;
+
+        if (payloadLen > 1023) return false;
+
+        size_t totalLen = 3 + payloadLen + 3;
+        while (_serial.available() < payloadLen + 3);
+
+        buffer[0] = 0xD3;
+        buffer[1] = lenH;
+        buffer[2] = lenL;
+        for (int i = 0; i < payloadLen + 3; i++) {
+            buffer[3 + i] = _serial.read();
+        }
+
+        len = totalLen;
+        return isValidRTCM(buffer, len);
+    }
+    return false;
+}
+
+bool GNSSModule::isValidRTCM(const uint8_t* data, size_t len) {
+    if (data[0] != 0xD3 || len < 6) return false;
+    uint16_t payloadLen = ((data[1] & 0x03) << 8) | data[2];
+    uint32_t crc = calculateCRC24Q(data, 3 + payloadLen);
+    uint32_t recvCrc = (data[3 + payloadLen] << 16) | (data[4 + payloadLen] << 8) | data[5 + payloadLen];
+    return crc == recvCrc;
+}
+
+uint32_t GNSSModule::calculateCRC24Q(const uint8_t* data, size_t len) {
+    uint32_t crc = 0;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= ((uint32_t)data[i] << 16);
+        for (int j = 0; j < 8; j++) {
+            crc <<= 1;
+            if (crc & 0x1000000) crc ^= 0x1864CFB;
+        }
+    }
+    return crc & 0xFFFFFF;
+}
+
+int GNSSModule::parseField(const String& line, int num) {
+    int start = line.indexOf(",") + 1;
+    for (int i = 0; i < num; i++) {
+        start = line.indexOf(",", start) + 1;
+    }
+    int end = line.indexOf(",", start);
+    return line.substring(start, end).toInt();
+}
+
+bool GNSSModule::readGNSSData(GNSSFix& fix) {
+    static char nmeaBuffer[100];
+    static size_t idx = 0;
+
+    while (_serial.available()) {
+        char c = _serial.read();
+
+        if (c == '$') {
+            idx = 0;
+            nmeaBuffer[idx++] = c;
+        }
+        else if (c == '\n' && idx > 6) {
+            nmeaBuffer[idx] = '\0';
+
+
+            idx = 0;
+        }
+        else if (idx < sizeof(nmeaBuffer) - 1) {
+            nmeaBuffer[idx++] = c;
+        }
+    }
+
+    return false;
+}
+
+
+bool GNSSModule::parseGGA(const char* line, GNSSFix& fix) {
+    char buf[100];
+    strncpy(buf, line, sizeof(buf));
+    buf[sizeof(buf) - 1] = '\0';
+
+    char* token = strtok(buf, ",");
+    int field = 0;
+    float latRaw = 0, lonRaw = 0, alt = 0;
+    int fixQuality = 0, numSV = 0;
+    float hdop = 0;
+    char latDir = 0, lonDir = 0;
+
+    while (token) {
+        field++;
+        switch (field) {
+        case 2:  // Time
+            if (strlen(token) >= 6) {
+                int hhmmss = atoi(token);
+                fix.hour = hhmmss / 10000;
+                fix.minute = (hhmmss / 100) % 100;
+                fix.second = hhmmss % 100;
+            }
+            break;
+
+        case 3: if (*token) latDir = token[0]; break;
+        case 4: if (*token) lonRaw = atof(token); break;
+        case 5: if (*token) lonDir = token[0]; break;
+        case 6: fixQuality = atoi(token); break;
+        case 7: numSV = atoi(token); break;  // <-- SIV is field 7!
+        case 8: hdop = atof(token); break;
+        case 9: alt = atof(token); break;
+        }
+        token = strtok(NULL, ",");
+    }
+
+    if (latRaw > 0 && (latDir == 'N' || latDir == 'S')) {
+        int deg = int(latRaw / 100);
+        float min = latRaw - deg * 100;
+        fix.lat = deg + min / 60.0f;
+        if (latDir == 'S') fix.lat = -fix.lat;
+    }
+    else {
+        fix.lat = 0.0;
+    }
+
+    if (lonRaw > 0 && (lonDir == 'E' || lonDir == 'W')) {
+        int deg = int(lonRaw / 100);
+        float min = lonRaw - deg * 100;
+        fix.lon = deg + min / 60.0f;
+        if (lonDir == 'W') fix.lon = -fix.lon;
+    }
+    else {
+        fix.lon = 0.0;
+    }
+
+    fix.alt = alt;
+    fix.fixType = fixQuality;
+    fix.SIV = numSV;
+    fix.HDOP = int(hdop * 100);
+    fix.gpsFix = (fixQuality > 0);
+    fix.diffUsed = (fixQuality >= 2);
+    fix.rtkFix = (fixQuality == 4);
+    fix.rtkFloat = (fixQuality == 5);
+
+    return true;
+}
+
+const char* GNSSModule::getRTCMName(uint16_t type) {
+    switch (type) {
+    case 1001: return "RTCM 1001: GPS L1 Obs";
+    case 1002: return "RTCM 1002: GPS L1 Obs (Ext)";
+    case 1003: return "RTCM 1003: GPS L1/L2 Obs";
+    case 1004: return "RTCM 1004: GPS L1/L2 Obs (Ext)";
+    case 1005: return "RTCM 1005: Stationary RTK (No height)";
+    case 1006: return "RTCM 1006: Stationary RTK (with height)";
+    case 1007: return "RTCM 1007: Antenna Descriptor";
+    case 1008: return "RTCM 1008: Antenna Descriptor + Serial Number";
+    case 1033: return "RTCM 1033: Antenna Descriptor & Firmware Version";
+    case 1071: return "RTCM 1071: GPS MSM1";
+    case 1072: return "RTCM 1072: GPS MSM2";
+    case 1073: return "RTCM 1073: GPS MSM3";
+    case 1074: return "RTCM 1074: GPS MSM4";
+    case 1075: return "RTCM 1075: GPS MSM5";
+    case 1076: return "RTCM 1076: GPS MSM6";
+    case 1077: return "RTCM 1077: GPS MSM7";
+    case 1081: return "RTCM 1081: GLONASS MSM1";
+    case 1082: return "RTCM 1082: GLONASS MSM2";
+    case 1083: return "RTCM 1083: GLONASS MSM3";
+    case 1084: return "RTCM 1084: GLONASS MSM4";
+    case 1085: return "RTCM 1085: GLONASS MSM5";
+    case 1086: return "RTCM 1086: GLONASS MSM6";
+    case 1087: return "RTCM 1087: GLONASS MSM7";
+    case 1091: return "RTCM 1091: Galileo MSM1";
+    case 1092: return "RTCM 1092: Galileo MSM2";
+    case 1093: return "RTCM 1093: Galileo MSM3";
+    case 1094: return "RTCM 1094: Galileo MSM4";
+    case 1095: return "RTCM 1095: Galileo MSM5";
+    case 1096: return "RTCM 1096: Galileo MSM6";
+    case 1097: return "RTCM 1097: Galileo MSM7";
+    case 1121: return "RTCM 1121: BeiDou MSM1";
+    case 1122: return "RTCM 1122: BeiDou MSM2";
+    case 1123: return "RTCM 1123: BeiDou MSM3";
+    case 1124: return "RTCM 1124: BeiDou MSM4";
+    case 1125: return "RTCM 1125: BeiDou MSM5";
+    case 1126: return "RTCM 1126: BeiDou MSM6";
+    case 1127: return "RTCM 1127: BeiDou MSM7";
+    case 1230: return "RTCM 1230: GLONASS Code-Phase Biases";
+    case 4072: return "RTCM 4072: Proprietary (e.g. u-blox)";
+    case 4073: return "RTCM 4073: u-blox Subtype A";
+    case 4074: return "RTCM 4074: u-blox Subtype B";
+    default: return "RTCM: Unknown or Unsupported Type";
+    }
+}
+
+uint16_t GNSSModule::getRTCMBits(const uint8_t* buffer, int startBit, int bitLen) {
+    uint32_t result = 0;
+    for (int i = 0; i < bitLen; i++) {
+        int byteIndex = (startBit + i) / 8;
+        int bitIndex = 7 - ((startBit + i) % 8);
+        result <<= 1;
+        result |= (buffer[byteIndex] >> bitIndex) & 0x01;
+    }
+    return result;
+}
+
+void GNSSModule::showFix(const GNSSFix& fix) {
+    Serial.printf(
+
+
+        "Time (UTC): %02d:%02d:%05.2f\n"
+        " %.6f%c"
+        " %.6f%c"
+        " %.2fm\n"
+        " %d %s"
+        " SIV=%d"
+        " HDOP=%.2f\n"
+        " GPS Fix %s"
+        " DGPS Used %s"
+        " RTK Float %s"
+        " RTK Fixed %s\n"
+        //" relNorth %.3f m"
+        //" relEast  %.3f m"
+        //" relDown  %.3f m\n"
+        //" adjNorth %.3f m"
+        //" adjEast  %.3f m"
+        //" adjDown  %.3f m\n"
+        ,
+
+        fix.hour, fix.minute, fix.second,
+        fabs(fix.lat), (fix.lat < 0 ? 'S' : 'N'),
+        fabs(fix.lon), (fix.lon < 0 ? 'W' : 'E'),
+        fix.alt,
+        fix.fixType, fixTypeToString(fix.fixType).c_str(),
+        fix.SIV,
+        fix.HDOP / 100.0f,  // convert HDOP from cm to float
+        fix.gpsFix ? "YES" : "NO",
+        fix.diffUsed ? "YES" : "NO",
+        fix.rtkFloat ? "YES" : "NO",
+        fix.rtkFix ? "YES" : "NO"
+
+        //fix.relNorth, fix.relEast, fix.relDown,
+        //fix.adjNorth, fix.adjEast, fix.adjDown
+    );
+}

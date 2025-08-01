@@ -21,11 +21,14 @@
   </ItemGroup>
   <ItemGroup>
     <!-- <ClInclude Include="$(MSBuildThisFileDirectory)RTKF3F.h" /> -->
-    <ClCompile Include="$(MSBuildThisFileDirectory)src\RTKF3F.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\GNSSModule.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\RadioModule.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\Slope.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\GNSSModule.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\MessageTypes.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\RadioModule.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\Slope.h" />
   </ItemGroup>
 </Project>

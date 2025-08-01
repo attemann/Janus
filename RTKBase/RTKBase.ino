@@ -1,63 +1,52 @@
 ﻿//RTKBase.ino
-/*
- Name:		RTKBase.ino
- Created:	6/19/2025 8:45:24 PM
- Author:	Jan Olav Endrerud
-*/
 #include <Arduino.h>
 #include <RFM69.h>
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
-#include <SparkFun_Unicore_GNSS_Arduino_Library.h> //http://librarymanager/All#SparkFun_Unicore_GNSS
 
-#include <RTKF3F.h>
+#include "RTKF3F.h"
 #include "LCD.h"
-#include "src/RTCMFwd.h"
 #include "TwoButtonMenu.h"
 
 #define APPNAME "RTKBase 1.0"
 
-//LCD I2C PINS
+//LCD i2C
 #define LCD_SDA       21
 #define LCD_SCL       22
 
+// BUTTONS
+#define BTN_MENU       12
+#define BTN_SELECT     13
+#define HOLD_TIME      800
+
+//RADIO
+#define RFM69_IRQ       4
+#define RFM69_CS        5
+#define RFM69_SCK      18
+#define RFM69_MISO     19
+#define RFM69_MOSI     23
+#define RFM69_RST      -1
+
+// UART
+#define GNSS_BAUD 115200
+#define UART_RX 16
+#define UART_TX 17
+
+
+
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-
-// Buttons
-#define BTN_MENU     12
-#define BTN_SELECT   13
-#define HOLD_TIME    800  // ms
-
 TwoButtonMenu menu(lcd);
 
-// Menu state
+HardwareSerial SerialGNSS(2);
+RFM69 radio(RFM69_CS, RFM69_IRQ, true);
+
+GNSSModule gnss(SerialGNSS);
+RadioModule radioMod(radio);
+
 bool menuActive = true;
 unsigned long menuPressStart = 0;
 bool menuHeld = false;
-
-// Radio RFM69HCW SDI PINS
-#define RFM69_CS       5
-#define RFM69_IRQ      4
-#define RFM69_SCK      18
-#define RFM69_MISO     19
-#define RFM69_MOSI     23  
-#define RFM69_RST      -1
-RFM69 radio(RFM69_CS, RFM69_IRQ, true); // true = SPI driver override
-
-// GPS UART PINS
-#define GNSS_BAUD 115200
-#define UART_TX       17
-#define UART_RX       16
-
-//UM980 myGNSS;
-UM980 myGNSS;
-HardwareSerial SerialGNSS(2); //Use UART1 on the ESP32
-
-#define SURVEYINTIME 15
-#define COMMANDDELAY 100 // ms
-
 int timeSurveyStart = 0;
-
 String prevlcdLine1 = "";
 String prevlcdLine2 = "";
 
@@ -68,270 +57,134 @@ enum BASESTATE {
     BASE_OPERATING,
     BASE_MENU
 };
-
 BASESTATE baseState = BASESTATE::BASE_STARTING;
 
-void applySettings() {
-    menuActive = false;
+GNSSModule::GNSSFix fix;
 
-    Serial.println("=== Settings Applied ===");
-    Serial.printf("RTCM Hz   : %s\n", menu.getValueByLabel("RTCM Hz").c_str());
-    Serial.printf("Survey T  : %s\n", menu.getValueByLabel("Survey T").c_str());
-
-    updateLCD(true, APPNAME, "Settings applied");
-
-    delay(1500);
-} 
-
-int parseField(const String& line, int num) {
-    //Serial.println("Parsing " + line);
-    int start = line.indexOf(",") + 1;
-    for (int i = 0; i < num; i++) {
-        start = line.indexOf(",", start) + 1;
-    }
-    int end = line.indexOf(",", start);
-    //Serial.print("start: "+String(start));
-    //Serial.println(" end: "+String(end));
-
-    return line.substring(start, end).toInt();
-}
-
-String gnggaFixTypeToString(int fixType) {
-    switch (fixType) {
-    case 0: return "Invalid (no fix)";
-    case 1: return "GPS fix";
-    case 2: return "DGPS fix";
-    case 3: return "PPS fix";
-    case 4: return "RTK Float";
-    case 5: return "RTK Fixed";
-    case 6: return "Dead Reckoning";
-    case 7: return "Manual Input Mode";
-    case 8: return "Simulation Mode";
-    default: return "Unknown Fix Type";
-    }
-}
-
-int oldFix = 0;
-
-
-// the setup function runs once when you press reset or power the board
 void setup() {
-	Serial.begin(115200);
-	while (!Serial);
+    Serial.begin(115200);
+    while (!Serial);
     delay(500);
     Serial.println("Base: Boot");
 
-	Wire.begin(LCD_SDA, LCD_SCL); // Set I2C pins for ESP32
-	lcd.init();
-	lcd.backlight();
+    Wire.begin(LCD_SDA, LCD_SCL);
+    lcd.init();
+    lcd.backlight();
     Serial.println("Base: LCD Init ok");
 
-	// --- RADIO ---
-    SPI.begin(RFM69_SCK, RFM69_MISO, RFM69_MOSI, RFM69_CS); // SCK, MISO, MOSI, SS
-
-    if (RFM69_RST != -1) {
-        pinMode(RFM69_RST, OUTPUT);
-        digitalWrite(RFM69_RST, LOW);
-        delay(10);
-        digitalWrite(RFM69_RST, HIGH);
-        delay(10);
-    }
-
-    pinMode(RFM69_IRQ, INPUT);
-
-    if (!radio.initialize(RF69_868MHZ, NODEID_RTKBASE, NETWORK_ID)) {
+    if (!radioMod.init(RFM69_SCK, RFM69_MISO, RFM69_MOSI, RFM69_CS, RFM69_IRQ, RFM69_RST)) {
         Serial.println("Base: Stuck in radio init failure loop, freeze");
-        while (1);
+        while (true);
     }
-    else {
-        Serial.println("Base: Radio init ok");
+    Serial.println("Base: Radio init ok");
+
+    if (!radioMod.verify()) {
+        Serial.println("Base: Radio verification failed, freeze");
+        while (true);
     }
+    Serial.println("Base: Radio verified");
 
-    if (verifyRadio(radio)) {
-        Serial.println("Base: Radio verified");
-    }
-    else {
-        Serial.println("Base: Radio verification failed, check wiring and settings. Freeze");
-        while (1); // Lock system if radio verification fails
-	}
-
-	radio.setFrequency(RTCM_TX_FREQ); // Set frequency for RTCM
-    radio.setHighPower();
-    radio.encrypt(NULL); // No encryption, matching sender
-
-    // Buttons preparation
     pinMode(BTN_MENU, INPUT_PULLUP);
     pinMode(BTN_SELECT, INPUT_PULLUP);
 
-    // Menu setup
-    //menu.addItem("Set RTCM Hz", { "1", "5", "10", "20" });
     menu.addItem("Set Survey T", { "30s", "60s", "120s" });
     menu.begin();
     Serial.println("Base: Menu init ok");
 
-    // --- GNSS UART ---
-    //We must start the serial port before using it in the library
-    SerialGNSS.begin(115200, SERIAL_8N1, UART_RX, UART_TX);
-
-    if (myGNSS.begin(SerialGNSS) == false) //Give the serial port over to the library
-    {
-        Serial.println("Base: UM980 failed, check ports and baud rates. Freezing...");
+    gnss.begin(GNSS_BAUD, UART_RX, UART_TX);
+    if (!gnss.init()) {
+        Serial.println("Base: GPS comm init fail, freeze");
         while (true);
     }
-    //myGNSS.enableDebugging(); // Print all debug to Serial
-
+    if (gnss.detectUARTPort() == 0) {
+        Serial.println("Base: GPS port detection fail, freeze");
+        while (true);
+	}
     Serial.println("Base: GPS init ok");
-
-    int portDetected = detectUM980Port(SerialGNSS);
-    if (portDetected > 0) {
-        Serial.printf("Base: Detected COM%d for UM980\n", portDetected);
-    }
-    else {
-        Serial.println("Base: Failed to detect UM980 port.");
-    }
 
     baseState = BASESTATE::BASE_STARTING;
 }
 
-// the loop function runs over and over again until power down or reset
 void loop() {
-String line1 = "";
-String line2 = "";
-String cmd = "";
-String line = "";
+    uint8_t rtcmBuf[1024];
+    size_t len = 0;
 
-//unsigned long airBegin = 0;
+    String line1 = "";
+    String line2 = "";
+    String cmd = "";
 
-switch (baseState) {
-case BASESTATE::BASE_STARTING: {
-    //Serial.println("baseState: BASE_STARTING");
-    cmd = "unlog\r\n";
-    SerialGNSS.print(cmd);	monitorSerial(SerialGNSS, cmd, 500); // Wait for response  
-    cmd = "mode rover\r\n";
-    SerialGNSS.print(cmd);	monitorSerial(SerialGNSS, cmd, 500); // Wait for response  
-    cmd = "gpgga com2 1\r\n";
-    SerialGNSS.print(cmd);	monitorSerial(SerialGNSS, cmd, 500); // Wait for response  
-    cmd = "saveconfig\r\n";
-    SerialGNSS.print(cmd);	monitorSerial(SerialGNSS, cmd, 500); // Wait for response  
+    switch (baseState) {
+    case BASESTATE::BASE_STARTING: {
+        baseState = BASESTATE::BASE_GETTINGFIX;
+        break;
+    }
+    case BASESTATE::BASE_GETTINGFIX: {
+        Serial.print("BASE_GETTINGFIX > ");
 
-    Serial.println("BASE_STARTING: GNSS commands sent");
-    baseState = BASESTATE::BASE_GETTINGFIX;
+        String line = SerialGNSS.readStringUntil('\n');
+        line.trim();
 
-    break;
-}
-case BASESTATE::BASE_GETTINGFIX: {
-    Serial.print("BASE_GETTINGFIX");
+        if (line.startsWith("$GNGGA")) {
+            Serial.println(line);
+			gnss.parseGGA(line.c_str(), fix);
+            gnss.showFix(fix);
 
-    line = SerialGNSS.readStringUntil('\n');
-    line.trim();
+            line1 = String(fix.fixType) + " " + gnss.fixTypeToString(fix.fixType);
+            line2 = "SIV: " + String(fix.SIV);
+            //Serial.print(" " + line1);
+            //Serial.println(", " + line2);
+            updateLCD(false, line1, line2);
 
-    if (line.startsWith("$GNGGA")) {
+            if (fix.fixType == 1 || fix.fixType==7) {
+                timeSurveyStart = millis();
+				gnss.sendCommand("unlog\r\n");
+                gnss.sendCommand("mode base time " + String(SURVEYINTIME) + " com2\r\n");
+                gnss.sendCommand("saveconfig\r\n");
 
-        int fixType = parseField(line, 5);
-        int SIV = parseField(line, 6);
-
-        line1 = String(fixType) + " " + gnggaFixTypeToString(fixType);
-        line2 = "SIV: " + String(SIV);
-
-        Serial.print(" " + line1);
-        Serial.println(", " + line2);
-
-        updateLCD(false, line1, line2);
-        if (fixType == 1 || fixType == 7) { //fixType 1 = 3D fix, 7 = Manual Input Mode
-            timeSurveyStart = millis();
-            cmd = "unlog\r\n";
-            SerialGNSS.print(cmd);	monitorSerial(SerialGNSS, cmd, 500); // Wait for response  
-            cmd = "mode base time " + String(SURVEYINTIME) + " com2\r\n";
-            SerialGNSS.print(cmd);	monitorSerial(SerialGNSS, cmd, 500); // Wait for response  
-            cmd = "saveconfig\r\n";
-            SerialGNSS.print(cmd);	monitorSerial(SerialGNSS, cmd, 500); // Wait for response  
-
-            Serial.println("BASE_GETTINGFIX: Entering BASE_SURVEYING");
-            baseState = BASESTATE::BASE_SURVEYING;
+                baseState = BASESTATE::BASE_SURVEYING;
+            }
         }
         break;
     }
-    break;
-}
-case BASESTATE::BASE_SURVEYING: {
-    unsigned long elapsed = millis() - timeSurveyStart;
-    if (elapsed < (SURVEYINTIME + 1) * 1000) {
-        //float err = getHDOP();
-        float err = 99.99;
-        line1 = "HDOP " + String(err, 2) + " m";
-        line2 = "Time left: " + String(((SURVEYINTIME * 1000) - elapsed) / 1000) + "s";
-        updateLCD(false, line1, line2);
+    case BASESTATE::BASE_SURVEYING: {
+        unsigned long elapsed = millis() - timeSurveyStart;
+        if (elapsed < (SURVEYINTIME + 1) * 1000) {
+            float err = 99.99;
+            line1 = "HDOP " + String(err, 2) + " m";
+            line2 = "Time left: " + String(((SURVEYINTIME * 1000) - elapsed) / 1000) + "s";
+            updateLCD(false, line1, line2);
+            break;
+        }
+        Serial.println("BASE_SURVEYING: Survey complete. Enabling RTCM...");
+        gnss.sendCommand("unlog\r\n"); 
+        gnss.sendCommand("config signalgroup 1\r\n");
+        gnss.sendCommand("rtcm1006 com2 1\r\n");
+        gnss.sendCommand("rtcm1033 com2 5\r\n");
+        gnss.sendCommand("rtcm1074 com2 5\r\n");
+        gnss.sendCommand("rtcm1084 com2 2\r\n");
+        gnss.sendCommand("rtcm1230 com2 2\r\n");
+        gnss.sendCommand("saveconfig\r\n");
+        Serial.println("BASE_SURVEYING: RTCM config done, entering OPERATING mode.");
+        baseState = BASESTATE::BASE_OPERATING;
         break;
     }
-
-    // Survey complete — configure base output
-    Serial.println("BASE_SURVEYING: Survey complete. Enabling RTCM...");
-
-    SerialGNSS.print("unlog\r\n");
-	delay(COMMANDDELAY);
-    SerialGNSS.print("config signalgroup 1\r\n");
-    delay(COMMANDDELAY);
-	SerialGNSS.print("rtcm1006 com2 1\r\n");
-    delay(COMMANDDELAY);
-    SerialGNSS.print("rtcm1033 com2 5\r\n");
-    delay(COMMANDDELAY);
-    SerialGNSS.print("rtcm1074 com2 5\r\n");
-    delay(COMMANDDELAY);
-    SerialGNSS.print("rtcm1084 com2 2\r\n");
-    delay(COMMANDDELAY);
-    SerialGNSS.print("rtcm1230 com2 2\r\n");
-    delay(COMMANDDELAY);
-    SerialGNSS.print("saveconfig\r\n");
-    delay(COMMANDDELAY);
-
-    Serial.println("BASE_SURVEYING: RTCM config done, entering OPERATING mode.");
-
-    baseState = BASESTATE::BASE_OPERATING;
-
-    break;
-}
-case BASESTATE::BASE_OPERATING: {
-    //Serial.println("baseState: BASE_OPERATING");
-    line1 = "Operating";
-    line2 = "***";
-    updateLCD(false, line1, line2);
-
-	updateRTCMForwarder();
-
-    break;
-}
-default:
-    break;
-}
+    case BASESTATE::BASE_OPERATING: {
+        line1 = "Operating";
+        line2 = "***";
+        updateLCD(false, line1, line2);
 
 
-delay(100);
-
-}
-
-/* if (!menuActive) return;
-
-// MENU button: long vs short press
-if (!digitalRead(BTN_MENU)) {
-    if (menuPressStart == 0) {
-        menuPressStart = millis();
+        if (gnss.readRTCM(rtcmBuf, len)) {
+            if (len > 0) {
+                radioMod.sendFragmentedRTCM(rtcmBuf, len);
+                uint16_t type = gnss.getRTCMBits(rtcmBuf, 24, 12);
+                Serial.printf("%4u: Sent %4zu bytes\n", type, len);
+            }
+        }
+        break;
     }
-    else if (!menuHeld && millis() - menuPressStart > HOLD_TIME) {
-        menuHeld = true;
-        applySettings();  // Long press
+    default:
+        break;
     }
-} else {
-    if (menuPressStart > 0 && !menuHeld) {
-        menu.nextItem();  // Short press
-    }
-    menuPressStart = 0;
-    menuHeld = false;
+    delay(100);
 }
-
-// SELECT button (cycle value)
-if (!digitalRead(BTN_SELECT)) {
-    menu.selectValue();
-    delay(200);
-}
-*/
-

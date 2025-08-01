@@ -1,4 +1,5 @@
 //Slope.cpp
+#include <Arduino.h>    
 #include "Slope.h"
 
 void Slope::setGliderId(int g) {
