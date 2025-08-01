@@ -4,22 +4,22 @@
 #include <RTKF3F.h>
 #include "GUTX.h"
 
-extern RFM69 rxtxRadio;
+extern RFM69 radio;
 extern Slope slope;
 extern GNSSFix lastFix;
 
 
 void sendWithReturnFreq(uint8_t dest, const uint8_t* msg, uint8_t len) {
   // Optional: stabilize before frequency change
-  rxtxRadio.setMode(RF69_MODE_SLEEP);
-  rxtxRadio.setFrequency(GU_TX_FREQ);
-  rxtxRadio.setMode(RF69_MODE_TX);
+  radio.setMode(RF69_MODE_SLEEP);
+  radio.setFrequency(GU_TX_FREQ);
+  radio.setMode(RF69_MODE_TX);
 
-  rxtxRadio.send(dest, msg, len);
+  radio.send(dest, msg, len);
 
-  rxtxRadio.setMode(RF69_MODE_SLEEP);
-  rxtxRadio.setFrequency(RTCM_TX_FREQ);
-  rxtxRadio.setMode(RF69_MODE_RX);
+  radio.setMode(RF69_MODE_SLEEP);
+  radio.setFrequency(RTCM_TX_FREQ);
+  radio.setMode(RF69_MODE_RX);
 }
 
 uint8_t fixStatus(GNSSFix fix) {

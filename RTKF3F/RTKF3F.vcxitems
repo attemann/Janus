@@ -21,6 +21,7 @@
   </ItemGroup>
   <ItemGroup>
     <!-- <ClInclude Include="$(MSBuildThisFileDirectory)RTKF3F.h" /> -->
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\RTKF3F.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\Slope.cpp" />
   </ItemGroup>
   <ItemGroup>

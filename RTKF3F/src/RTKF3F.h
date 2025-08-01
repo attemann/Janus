@@ -1,9 +1,12 @@
-//RTKF3F.h
+﻿//RTKF3F.h
 
 #pragma once
 
 #ifndef RTKF3F_H
 #define RTKF3F_H
+
+#include <HardwareSerial.h>
+#include <RFM69.h>
 
 #include "MessageTypes.h"
 #include "Slope.h"
@@ -17,8 +20,8 @@
 #define MSG_FLIGHT_SETTINGS   0x03  // Settings for the slope
 #define MSG_REQ_POS           0x04  // BS request to GU for position
 
-#define RTCM_TX_FREQ 868100000
-#define GU_TX_FREQ 868200000
+#define RTCM_TX_FREQ 868100000 
+#define GU_TX_FREQ   868200000
 
 #define NODEID_RTKBASE   1
 #define NODEID_BS		 2
@@ -27,22 +30,50 @@
 // Const for airborne detection
 #define DETECTOR_BUFFER_SIZE 30           // 3 secs with 0.1s interval
 #define THRESHOLD_AIRBORNE 9.0f  // 3 m/s avg over 3 secs
-#define THRESHOLD_LANDED 1.0f    // 1 m/s avg over 3 secss
+#define THRESHOLD_LANDED 1.0f    // 1 m/s avg over 3 secs
+
+extern HardwareSerial SerialGNSS;  // Declaration only
+extern RFM69 radio;  // Declaration only
 
 struct GNSSFix {
-	float relNorth;   // meters
-	float relEast;
-	float relDown;
+	// ⬅️ Add these for time parsing and printing
+	int hour = 0;
+	int minute = 0;
+	float second = 0;
 
-	float adjNorth;   // meters, adjusted to PPOS
+	// From GNGGA
+	float lat;         // Decimal degrees
+	float lon;         // Decimal degrees
+	float alt;         // Altitude in meters
+
+	// From UBX-RELPOPNED (optional/legacy)
+	float relNorth;    // Relative North (m)
+	float relEast;     // Relative East (m)
+	float relDown;     // Relative Down (m)
+
+	float adjNorth;    // Adjusted North (m), relative to pilot or reference
 	float adjEast;
 	float adjDown;
 
-	bool gpsFix;      // Bit 0: GNSS fix valid
-	bool diffUsed;    // Bit 1: Differential corrections used
-	bool rtkFloat;    // Bit 2: RTK float
-	bool rtkFix;      // Bit 3: RTK fixed
+	int numSV = 0;      // Satellites in view
+	int HDOP = 0;        // Horizontal Dilution of Precision (HDOP) in cm
+	int fixType = 0;    // Raw fix type
+
+	// Fix flags
+	bool gpsFix;       // True if GNSS fix is valid (GGA fix quality > 0)
+	bool diffUsed;     // Differential corrections used (GGA fix quality >= 2)
+	bool rtkFloat;     // RTK float (GGA fix quality == 5)
+	bool rtkFix;       // RTK fixed (GGA fix quality == 4)
 };
+
+void monitorSerial(HardwareSerial& gnssSerial, String c,  int wait);
+int detectUM980Port(HardwareSerial& gnssSerial);
+const char* getRTCMMessageName(uint16_t type);
+uint16_t getBits(const uint8_t* buffer, int startBit, int bitLen);
+bool readGNSSData(GNSSFix& fix);
+bool verifyRadio(RFM69& radio);
+void updateRTCMForwarder();
+bool isValidRTCM(const uint8_t* rtcm, size_t totalLen);
 
 enum class BSState {
 	BS_WAITING,
@@ -71,7 +102,7 @@ enum class BSTaskState {
 	TASK_FINISHED
 };
 
-// === Event codes (Bits 7�4 of Byte 1) ===
+// === Event codes (Bits 7–4 of Byte 1) ===
 // Events sent from Glider Unit (GU) to Base Station (BS)
 enum class EventCode : uint8_t {
 	EVT_NONE = 0x0,  // Reserved / no event
@@ -86,7 +117,7 @@ enum class EventCode : uint8_t {
 	EVT_ACK = 0x9,  // Acknowledgment of flight settings
 };
 
-// === Status bit flags (Bits 3�0 of Byte 1 + bit 4 in Byte 2) ===
+// === Status bit flags (Bits 3–0 of Byte 1 + bit 4 in Byte 2) ===
 constexpr uint8_t STATUS_LINK_OK = 0x01;  // Or define separately if needed
 constexpr uint8_t STATUS_RTK_FLOAT = 0x02;
 constexpr uint8_t STATUS_RTK_FIX = 0x04;
@@ -94,7 +125,7 @@ constexpr uint8_t STATUS_GPS_FIX = 0x08;
 constexpr uint8_t STATUS_DGNSS_USED = 0x10;
 
 // === Packet format for messages from GU to BS ===
-// Byte 0: GLIDER_ID       (uint8_t, 0�255)
+// Byte 0: GLIDER_ID       (uint8_t, 0–255)
 // Byte 1: EVENT_STATUS    ((event << 4) | (status & 0x0F))
 // Byte 2: STATUS_DGNSS_USED (bit 4) + TIMESTAMP[23:17] (7 bits)
 // Byte 3: TIMESTAMP[16:9]
@@ -113,6 +144,84 @@ enum class AckCode : uint8_t {
 	ACK_ERROR = 0x01,  // Optional future use
 };
 
+class RTCM_Fragmenter {
+public:
+	static const uint8_t MAX_PAYLOAD = 61; // Safe max per RFM69
+	static const uint8_t MAX_TOTAL_LEN = 255; // 8-bit length
 
+	// Send a long RTCM message, broken into chunks
+	static void sendFragmented(RFM69& radio, uint8_t destId, const uint8_t* data, size_t len) {
+		if (len > MAX_TOTAL_LEN) return;  // too big
+
+		uint8_t packet[MAX_PAYLOAD];
+		uint8_t totalChunks = (len + MAX_PAYLOAD - 1) / MAX_PAYLOAD;
+
+		for (uint8_t i = 0; i < totalChunks; ++i) {
+			size_t offset = i * MAX_PAYLOAD;
+			size_t chunkLen = min((size_t)MAX_PAYLOAD, len - offset);
+
+			packet[0] = 0xA0;              // Fragment marker
+			packet[1] = totalChunks;      // Total
+			packet[2] = i;                // Index
+
+			memcpy(packet + 3, data + offset, chunkLen);
+			radio.send(destId, packet, chunkLen + 3);
+			delay(5);  // throttle
+		}
+	}
+};
+
+class RTCM_Reassembler {
+public:
+	static const uint8_t MAX_FRAGMENTS = 10;
+	static const uint16_t MAX_TOTAL_LEN = 610; // MAX_FRAGMENTS * MAX_PAYLOAD
+
+	RTCM_Reassembler() : receivedCount(0), totalExpected(0), complete(false) {
+		memset(fragmentReceived, 0, sizeof(fragmentReceived));
+	}
+
+	// Feed each incoming fragment here
+	void acceptFragment(const uint8_t* data, size_t len) {
+		if (len < 4 || data[0] != 0xA0) return; // invalid
+
+		uint8_t total = data[1];
+		uint8_t index = data[2];
+		if (total > MAX_FRAGMENTS || index >= total) return;
+
+		if (index == 0) {
+			totalExpected = total;
+			receivedCount = 0;
+			complete = false;
+			memset(fragmentReceived, 0, sizeof(fragmentReceived));
+		}
+
+		size_t fragLen = len - 3;
+		memcpy(buffer + index * RTCM_Fragmenter::MAX_PAYLOAD, data + 3, fragLen);
+		fragmentReceived[index] = fragLen;
+		receivedCount++;
+
+		if (receivedCount == totalExpected) {
+			size_t totalLen = 0;
+			for (uint8_t i = 0; i < totalExpected; ++i) {
+				totalLen += fragmentReceived[i];
+			}
+			this->length = totalLen;
+			complete = true;
+		}
+	}
+
+	bool isComplete() const { return complete; }
+	const uint8_t* getData() const { return buffer; }
+	size_t getLength() const { return length; }
+	void reset() { complete = false; receivedCount = 0; }
+
+private:
+	uint8_t buffer[MAX_TOTAL_LEN];
+	uint8_t fragmentReceived[MAX_FRAGMENTS];
+	uint8_t receivedCount;
+	uint8_t totalExpected;
+	size_t length;
+	bool complete;
+};
 
 #endif

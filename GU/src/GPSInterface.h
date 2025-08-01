@@ -4,8 +4,7 @@
 #ifndef GPSINTERFACE_H
 #define GPSINTERFACE_H
 
-  #include <RTKF3F.h>
+#include <RTKF3F.h>
 
-  bool readGNSSFix(GNSSFix& fix);
 
 #endif

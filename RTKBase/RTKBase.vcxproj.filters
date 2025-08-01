@@ -21,18 +21,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="RTKBase.ino" />
-    <ClCompile Include="src\RTCMFwd.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="LCD.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="__vm\.RTKBase.vsarduino.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\RTCMFwd.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="TwoButtonMenu.h">
