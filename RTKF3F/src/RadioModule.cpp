@@ -1,3 +1,5 @@
+//RadioModule.cpp
+
 #include <Arduino.h>    
 #include "RadioModule.h"
 #include "RTKF3F.h"
@@ -34,11 +36,39 @@ bool RadioModule::verify() {
     return version == expectedVersion;
 }
 
+bool RadioModule::receive(uint8_t*& data, uint8_t& len) {
+    if (_radio.receiveDone()) {
+        data = _radio.DATA;
+        len  = _radio.DATALEN;
+        return true;
+    }
+    return false;
+}
+
+void RadioModule::sendWithReturnFreq(uint8_t destNode, int destFreq, int returnFreq, const uint8_t* msg, uint8_t len) {
+    // Optional: stabilize before frequency change
+    _radio.setMode(RF69_MODE_SLEEP);
+    _radio.setFrequency(destFreq);
+    _radio.setMode(RF69_MODE_TX);
+
+    _radio.send(destNode, msg, len);
+
+    _radio.setMode(RF69_MODE_SLEEP);
+    _radio.setFrequency(returnFreq);
+    _radio.setMode(RF69_MODE_RX);
+}
+
 void RadioModule::sendRTCM(const uint8_t* data, size_t len) {
-    uint8_t packet[1025];
-    packet[0] = MSG_RTCM;
-    memcpy(&packet[1], data, len);
-    _radio.send(0, packet, len + 1);
+    if (len == 0) return;
+
+    if (len <= RTCM_Fragmenter::MAX_PAYLOAD) {
+        // Send full RTCM message directly (starts with 0xD3)
+        _radio.send(0, data, len);
+    }
+    else {
+        // Too large ? fragment
+        sendFragmentedRTCM(data, len);
+    }
 }
 
 void RadioModule::sendFragmentedRTCM(const uint8_t* data, size_t len) {
@@ -101,7 +131,20 @@ void RadioModule::RTCM_Reassembler::acceptFragment(const uint8_t* data, size_t l
     }
 }
 
-bool RadioModule::RTCM_Reassembler::isComplete() const { return complete; }
-const uint8_t* RadioModule::RTCM_Reassembler::getData() const { return buffer; }
-size_t RadioModule::RTCM_Reassembler::getLength() const { return length; }
-void RadioModule::RTCM_Reassembler::reset() { complete = false; receivedCount = 0; }
+bool RadioModule::RTCM_Reassembler::isComplete() const {
+    return complete;
+}
+
+const uint8_t* RadioModule::RTCM_Reassembler::getData() const {
+    return buffer;
+}
+
+size_t RadioModule::RTCM_Reassembler::getLength() const {
+    return length;
+}
+
+void RadioModule::RTCM_Reassembler::reset() {
+    complete = false;
+    receivedCount = 0;
+    memset(fragmentReceived, 0, sizeof(fragmentReceived));
+}

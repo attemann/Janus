@@ -30,9 +30,6 @@
     <ClCompile Include="src\GUTX.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\Receiver.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="__vm\.GU.vsarduino.h">
@@ -45,9 +42,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\GUTX.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\Receiver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="GU.h">

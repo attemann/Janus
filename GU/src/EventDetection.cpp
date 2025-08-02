@@ -37,7 +37,7 @@ void initEventDetection() {
   B_y = slope_ny *  (SLOPELENGTH / 2);
 }
 
-bool checkForCrossingEvent(const GNSSFix& fix, EventCode& event) {
+bool checkForCrossingEvent(const GNSSModule::GNSSFix& fix, EventCode& event) {
   static bool wasBetweenBases = false;
 
   float px = fix.adjEast;

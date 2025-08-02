@@ -42,23 +42,24 @@ int GNSSModule::detectUARTPort() {
     return 0; // None found
 }
 
-bool GNSSModule::init() {
-
-    Serial.println("UM980 GNSS init ok");
-
-    sendCommand("unlog\r\n");
-    sendCommand("gpgga com2 1\r\n");
-    sendCommand("saveconfig\r\n");
-
-    return true;
-}
-
 void GNSSModule::sendCommand(const String& command) {
     Serial.print("GPS: Sending command: ");
     Serial.println(command);
     unsigned long start = millis();
     _serial.print(command);
     while ((millis() - start) < COMMANDDELAY) {
+        if (_serial.available()) Serial.write(_serial.read());
+    }
+
+}
+
+void GNSSModule::sendReset() {
+	String command = "freset\r\n";
+    Serial.print("GPS: Sending command: ");
+    Serial.println(command);
+    unsigned long start = millis();
+    _serial.print(command);
+    while ((millis() - start) < 5000) {
         if (_serial.available()) Serial.write(_serial.read());
     }
 
@@ -159,21 +160,30 @@ int GNSSModule::parseField(const String& line, int num) {
     return line.substring(start, end).toInt();
 }
 
-bool GNSSModule::readGNSSData(GNSSFix& fix) {
+bool GNSSModule::readGNSSData(GNSSFix& fix, bool showRaw) {
     static char nmeaBuffer[100];
     static size_t idx = 0;
 
     while (_serial.available()) {
         char c = _serial.read();
 
+        if (showRaw) {
+            Serial.write(c);
+        }
+
         if (c == '$') {
             idx = 0;
             nmeaBuffer[idx++] = c;
         }
         else if (c == '\n' && idx > 6) {
-            nmeaBuffer[idx] = '\0';
+            nmeaBuffer[idx] = '\0';  // Null-terminate
 
+            // Attempt to parse if it's a GGA sentence
+            if (strncmp(nmeaBuffer, "$GNGGA", 6) == 0) {
+                return parseGGA(nmeaBuffer, fix);  // returns true if parsed successfully
+            }
 
+            // Reset buffer for next sentence
             idx = 0;
         }
         else if (idx < sizeof(nmeaBuffer) - 1) {
@@ -181,7 +191,7 @@ bool GNSSModule::readGNSSData(GNSSFix& fix) {
         }
     }
 
-    return false;
+    return false;  // No complete valid line yet
 }
 
 
@@ -190,35 +200,35 @@ bool GNSSModule::parseGGA(const char* line, GNSSFix& fix) {
     strncpy(buf, line, sizeof(buf));
     buf[sizeof(buf) - 1] = '\0';
 
-    char* token = strtok(buf, ",");
-    int field = 0;
-    float latRaw = 0, lonRaw = 0, alt = 0;
-    int fixQuality = 0, numSV = 0;
-    float hdop = 0;
-    char latDir = 0, lonDir = 0;
+    // Tokenization preserving empty fields
+    const int MAX_FIELDS = 20;
+    const char* fields[MAX_FIELDS] = { nullptr };
+    int fieldCount = 0;
 
-    while (token) {
-        field++;
-        switch (field) {
-        case 2:  // Time
-            if (strlen(token) >= 6) {
-                int hhmmss = atoi(token);
-                fix.hour = hhmmss / 10000;
-                fix.minute = (hhmmss / 100) % 100;
-                fix.second = hhmmss % 100;
-            }
-            break;
-
-        case 3: if (*token) latDir = token[0]; break;
-        case 4: if (*token) lonRaw = atof(token); break;
-        case 5: if (*token) lonDir = token[0]; break;
-        case 6: fixQuality = atoi(token); break;
-        case 7: numSV = atoi(token); break;  // <-- SIV is field 7!
-        case 8: hdop = atof(token); break;
-        case 9: alt = atof(token); break;
-        }
-        token = strtok(NULL, ",");
+    char* p = buf;
+    while (fieldCount < MAX_FIELDS) {
+        fields[fieldCount++] = p;
+        char* comma = strchr(p, ',');
+        if (!comma) break;
+        *comma = '\0';
+        p = comma + 1;
     }
+
+    if (fieldCount < 9) return false;
+
+    // Parse time
+    if (fields[1] && *fields[1]) {
+        float rawTime = atof(fields[1]);
+        fix.hour = int(rawTime / 10000);
+        fix.minute = int(fmod(rawTime / 100, 100));
+        fix.second = fmod(rawTime, 100);
+    }
+
+    // Lat/lon
+    float latRaw = fields[2] && *fields[2] ? atof(fields[2]) : 0;
+    char latDir = fields[3] && *fields[3] ? fields[3][0] : 0;
+    float lonRaw = fields[4] && *fields[4] ? atof(fields[4]) : 0;
+    char lonDir = fields[5] && *fields[5] ? fields[5][0] : 0;
 
     if (latRaw > 0 && (latDir == 'N' || latDir == 'S')) {
         int deg = int(latRaw / 100);
@@ -226,9 +236,7 @@ bool GNSSModule::parseGGA(const char* line, GNSSFix& fix) {
         fix.lat = deg + min / 60.0f;
         if (latDir == 'S') fix.lat = -fix.lat;
     }
-    else {
-        fix.lat = 0.0;
-    }
+    else fix.lat = 0;
 
     if (lonRaw > 0 && (lonDir == 'E' || lonDir == 'W')) {
         int deg = int(lonRaw / 100);
@@ -236,21 +244,23 @@ bool GNSSModule::parseGGA(const char* line, GNSSFix& fix) {
         fix.lon = deg + min / 60.0f;
         if (lonDir == 'W') fix.lon = -fix.lon;
     }
-    else {
-        fix.lon = 0.0;
-    }
+    else fix.lon = 0;
 
-    fix.alt = alt;
-    fix.fixType = fixQuality;
-    fix.SIV = numSV;
+    fix.fixType = fields[6] && *fields[6] ? atoi(fields[6]) : 0;
+    fix.SIV = fields[7] && *fields[7] ? atoi(fields[7]) : 0;
+    float hdop = fields[8] && *fields[8] ? atof(fields[8]) : 0;
     fix.HDOP = int(hdop * 100);
-    fix.gpsFix = (fixQuality > 0);
-    fix.diffUsed = (fixQuality >= 2);
-    fix.rtkFix = (fixQuality == 4);
-    fix.rtkFloat = (fixQuality == 5);
+    fix.alt = fields[9] && *fields[9] ? atof(fields[9]) : 0;
+
+    fix.gpsFix = (fix.fixType > 0);
+    fix.diffUsed = (fix.fixType >= 2);
+    fix.rtkFix = (fix.fixType == 4);
+    fix.rtkFloat = (fix.fixType == 5);
 
     return true;
 }
+
+
 
 const char* GNSSModule::getRTCMName(uint16_t type) {
     switch (type) {
@@ -312,19 +322,17 @@ uint16_t GNSSModule::getRTCMBits(const uint8_t* buffer, int startBit, int bitLen
 
 void GNSSModule::showFix(const GNSSFix& fix) {
     Serial.printf(
-
-
-        "Time (UTC): %02d:%02d:%05.2f\n"
+        "Time %02d:%02d:%05.2f "
         " %.6f%c"
         " %.6f%c"
         " %.2fm\n"
         " %d %s"
         " SIV=%d"
-        " HDOP=%.2f\n"
-        " GPS Fix %s"
-        " DGPS Used %s"
-        " RTK Float %s"
-        " RTK Fixed %s\n"
+        " HDOP=%.2f "
+        " GPS Fix [%s]"
+        " DGPS Used [%s]"
+        " RTK Float [%s]"
+        " RTK Fixed [%s]\n"
         //" relNorth %.3f m"
         //" relEast  %.3f m"
         //" relDown  %.3f m\n"
@@ -340,10 +348,10 @@ void GNSSModule::showFix(const GNSSFix& fix) {
         fix.fixType, fixTypeToString(fix.fixType).c_str(),
         fix.SIV,
         fix.HDOP / 100.0f,  // convert HDOP from cm to float
-        fix.gpsFix ? "YES" : "NO",
-        fix.diffUsed ? "YES" : "NO",
-        fix.rtkFloat ? "YES" : "NO",
-        fix.rtkFix ? "YES" : "NO"
+        fix.gpsFix ? "1" : "0",
+        fix.diffUsed ? "1" : "0",
+        fix.rtkFloat ? "1" : "0",
+        fix.rtkFix ? "1" : "0"
 
         //fix.relNorth, fix.relEast, fix.relDown,
         //fix.adjNorth, fix.adjEast, fix.adjDown

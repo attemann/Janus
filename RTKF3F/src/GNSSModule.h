@@ -43,7 +43,8 @@ public:
     int detectUARTPort();
     bool init();
     void sendCommand(const String& command);
-    bool readGNSSData(GNSSFix& fix);
+    void sendReset();
+    bool readGNSSData(GNSSFix& fix, bool showRaw);
     bool readFix(GNSSFix& fix);
     bool readRTCM(uint8_t* buffer, size_t& len);
     const char* getRTCMName(uint16_t type);
@@ -52,6 +53,7 @@ public:
     int parseField(const String& line, int num);
     void showFix(const GNSSFix& fix);
     bool parseGGA(const char* line, GNSSFix& fix);
+    bool isValidRTCM(const uint8_t* data, size_t len);
 
 private:
     HardwareSerial& _serial;
@@ -59,7 +61,7 @@ private:
     size_t _nmeaIdx;
 
     uint32_t calculateCRC24Q(const uint8_t* data, size_t len);
-    bool isValidRTCM(const uint8_t* data, size_t len);
+
 };
 
 

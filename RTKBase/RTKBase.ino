@@ -77,7 +77,7 @@ void setup() {
     Serial.begin(115200);
     while (!Serial);
     delay(500);
-    Serial.println("Base: Booting");
+    Serial.printf("%s booting\r\n", APPNAME);
 
     // User interface
     screen.begin();
@@ -95,9 +95,6 @@ void setup() {
 
     // GNSS
     gnss.begin(GNSS_BAUD, UART_RX, UART_TX);
-    if (!gnss.init()) {
-        haltUnit("Gnss init", "Failure, freeze");
-    }  else Serial.println("Gnss init ok");
 
     if (gnss.detectUARTPort() == 0) {
         haltUnit("Gnss port", "Failure, freeze");
@@ -164,10 +161,10 @@ void loop() {
         gnss.sendCommand("unlog\r\n"); 
         gnss.sendCommand("config signalgroup 1\r\n");
         gnss.sendCommand("rtcm1006 com2 1\r\n");
-        gnss.sendCommand("rtcm1033 com2 5\r\n");
-        gnss.sendCommand("rtcm1074 com2 5\r\n");
-        gnss.sendCommand("rtcm1084 com2 2\r\n");
-        gnss.sendCommand("rtcm1230 com2 2\r\n");
+        gnss.sendCommand("rtcm1033 com2 2\r\n");
+        gnss.sendCommand("rtcm1074 com2 3\r\n");
+        gnss.sendCommand("rtcm1084 com2 4\r\n");
+        gnss.sendCommand("rtcm1230 com2 5\r\n");
         gnss.sendCommand("saveconfig\r\n");
         Serial.println("BASE_SURVEYING: RTCM config done, entering OPERATING mode.");
         baseState = BASESTATE::BASE_OPERATING;
@@ -184,7 +181,7 @@ void loop() {
             if (len > 0) {
                 uint16_t type = gnss.getRTCMBits(rtcmBuf, 24, 12);
                 Serial.printf("%4zu bytes RTCM%4u\n", len, type);
-                radioMod.sendFragmentedRTCM(rtcmBuf, len);
+                radioMod.sendRTCM(rtcmBuf, len);
             }
         }
         break;

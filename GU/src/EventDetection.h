@@ -7,6 +7,6 @@
   #include <RTKF3F.h> 
 
   void initEventDetection();
-  bool checkForCrossingEvent(const GNSSFix& fix, EventCode& event);
+  bool checkForCrossingEvent(const GNSSModule::GNSSFix& fix, EventCode& event);
 
 #endif

@@ -2,27 +2,15 @@
 #include <Arduino.h>
 #include <RFM69.h> 
 #include <RTKF3F.h>
+
+#include "RadioModule.h"
+
 #include "GUTX.h"
 
-extern RFM69 radio;
+extern RadioModule radioMod;
 extern Slope slope;
-extern GNSSFix lastFix;
 
-
-void sendWithReturnFreq(uint8_t dest, const uint8_t* msg, uint8_t len) {
-  // Optional: stabilize before frequency change
-  radio.setMode(RF69_MODE_SLEEP);
-  radio.setFrequency(GU_TX_FREQ);
-  radio.setMode(RF69_MODE_TX);
-
-  radio.send(dest, msg, len);
-
-  radio.setMode(RF69_MODE_SLEEP);
-  radio.setFrequency(RTCM_TX_FREQ);
-  radio.setMode(RF69_MODE_RX);
-}
-
-uint8_t fixStatus(GNSSFix fix) {
+uint8_t fixStatus(GNSSModule::GNSSFix fix) {
   uint8_t status=0;
 
   if (fix.gpsFix)     status |= STATUS_GPS_FIX;       // Bit 3: GNSS fix valid
@@ -39,10 +27,10 @@ void txEvent(EventCode code, uint8_t status_flags) {
     encodeEventMessage(msg, slope.getGliderId(),
         static_cast<uint8_t>(code),  // cast added
         status_flags);
-    sendWithReturnFreq(NODEID_BS, msg, sizeof(msg));
+    radioMod.sendWithReturnFreq(NODEID_BS, GU_TX_FREQ, RTCM_TX_FREQ, msg, sizeof(msg));
 }
 
-void txRelPos(GNSSFix fix, bool isRelativeToBase) {
+void txRelPos(GNSSModule::GNSSFix fix, bool isRelativeToBase) {
   uint8_t msg[6];
   int n,e,d;
 
@@ -61,11 +49,11 @@ void txRelPos(GNSSFix fix, bool isRelativeToBase) {
   int16_t d_dm = d / 10;
 
   encodeRelPosMessage(msg, slope.getGliderId(), n_dm, e_dm, d_dm, fixStatus(fix));
-  sendWithReturnFreq(NODEID_BS, msg, sizeof(msg));
+  radioMod.sendWithReturnFreq(NODEID_BS, GU_TX_FREQ, RTCM_TX_FREQ, msg, sizeof(msg));
 }
 
 void txMsg(uint8_t msgCode, uint8_t d) {
   uint8_t msg[6];
   encodeMiscMessage(msg, slope.getGliderId(), d);
-  sendWithReturnFreq(NODEID_BS, msg, sizeof(msg));
+  radioMod.sendWithReturnFreq(NODEID_BS, GU_TX_FREQ, RTCM_TX_FREQ, msg, sizeof(msg));
 }

@@ -1,3 +1,4 @@
+//RadioModule.h
 #pragma once
 #include <Arduino.h>
 #include <RFM69.h>
@@ -18,6 +19,8 @@ public:
     bool verify();
     void sendRTCM(const uint8_t* data, size_t len);
     void sendFragmentedRTCM(const uint8_t* data, size_t len);
+    bool receive(uint8_t*& data, uint8_t& len);
+    void sendWithReturnFreq(uint8_t destNode, int destFreq, int returnFreq, const uint8_t* msg, uint8_t len);
 
     // Nested RTCM Fragmenter class
     class RTCM_Fragmenter {
@@ -40,6 +43,7 @@ public:
         const uint8_t* getData() const;
         size_t getLength() const;
         void reset();
+
 
     private:
         uint8_t buffer[MAX_TOTAL_LEN];
