@@ -3,12 +3,48 @@
 
 #include <Arduino.h>
 #include <LiquidCrystal_I2C.h>
+#include <Wire.h>
 
-// Disse er definert i LCD.cpp
-extern String lastlcdLine1;
-extern String lastlcdLine2;
+//LCD i2C
+#define LCD_SDA       21
+#define LCD_SCL       22
 
-// Prototypen
-void updateLCD(bool force = false, String line1 = "", String line2 = "");
+class LCDManager {
+public:
+    LCDManager(LiquidCrystal_I2C& lcdRef) : lcd(lcdRef) {}
 
+    void begin() {
+        lcd.init();
+        lcd.backlight();
+        lcd.clear();
+        prevLine[0] = String(16, ' ');
+        prevLine[1] = String(16, ' ');
+    }
+
+    void setLine(uint8_t line, const String& text) {
+        if (line > 1) return;
+
+        String padded = text;
+        if (padded.length() > 16)
+            padded = padded.substring(0, 16);
+        while (padded.length() < 16)
+            padded += ' ';
+
+        if (prevLine[line] != padded) {
+            lcd.setCursor(0, line);
+            lcd.print(padded);
+            prevLine[line] = padded;
+        }
+    }
+
+    void clear() {
+        lcd.clear();
+        prevLine[0] = String(16, ' ');
+        prevLine[1] = String(16, ' ');
+    }
+
+private:
+    LiquidCrystal_I2C& lcd;
+    String prevLine[2];
+};
 #endif

@@ -21,9 +21,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="RTKBase.ino" />
-    <ClCompile Include="LCD.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="__vm\.RTKBase.vsarduino.h">

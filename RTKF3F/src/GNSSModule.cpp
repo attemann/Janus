@@ -8,8 +8,8 @@ GNSSModule::GNSSModule(HardwareSerial& serial)
     : _serial(serial), _nmeaIdx(0) {
 }
 
-void GNSSModule::begin(uint32_t baud, int rx, int tx) {
-    _serial.begin(baud, SERIAL_8N1, rx,tx);
+void GNSSModule::begin(uint32_t baud, int RX, int TX) {
+    _serial.begin(baud, SERIAL_8N1, RX, TX);
 }
 
 int GNSSModule::detectUARTPort() {

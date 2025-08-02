@@ -4,8 +4,17 @@
 
 class RadioModule {
 public:
+    struct HWPins {
+        int sck = -1;
+        int miso = -1;
+        int mosi = -1;
+        int cs = -1;
+        int irq = -1;
+        int reset = -1;
+	};
+
     RadioModule(RFM69& radio);
-    bool init(int sck, int miso, int mosi, int cs, int irq, int reset);
+    bool init(RadioModule::HWPins pins, int nodeid, int networkid, int frequency);
     bool verify();
     void sendRTCM(const uint8_t* data, size_t len);
     void sendFragmentedRTCM(const uint8_t* data, size_t len);

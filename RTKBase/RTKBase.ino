@@ -10,9 +10,7 @@
 
 #define APPNAME "RTKBase 1.0"
 
-//LCD i2C
-#define LCD_SDA       21
-#define LCD_SCL       22
+
 
 // BUTTONS
 #define BTN_MENU       12
@@ -27,28 +25,35 @@
 #define RFM69_MOSI     23
 #define RFM69_RST      -1
 
+RadioModule::HWPins radioPins = {
+    .sck   = RFM69_SCK,
+    .miso  = RFM69_MISO,
+    .mosi  = RFM69_MOSI,
+    .cs    = RFM69_CS,
+    .irq   = RFM69_IRQ,
+    .reset = RFM69_RST
+};
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+LCDManager screen(lcd);
+
+TwoButtonMenu menu(lcd);
+
+RFM69 radio(radioPins.cs, radioPins.irq, true);
+RadioModule radioMod(radio);
+
 // UART
 #define GNSS_BAUD 115200
 #define UART_RX 16
 #define UART_TX 17
-
-
-
-LiquidCrystal_I2C lcd(0x27, 16, 2);
-TwoButtonMenu menu(lcd);
-
 HardwareSerial SerialGNSS(2);
-RFM69 radio(RFM69_CS, RFM69_IRQ, true);
-
 GNSSModule gnss(SerialGNSS);
-RadioModule radioMod(radio);
+GNSSModule::GNSSFix fix;
 
 bool menuActive = true;
 unsigned long menuPressStart = 0;
 bool menuHeld = false;
 int timeSurveyStart = 0;
-String prevlcdLine1 = "";
-String prevlcdLine2 = "";
 
 enum BASESTATE {
     BASE_STARTING,
@@ -59,30 +64,44 @@ enum BASESTATE {
 };
 BASESTATE baseState = BASESTATE::BASE_STARTING;
 
-GNSSModule::GNSSFix fix;
+void haltUnit(String msg1, String msg2) {
+    Serial.print(msg1);
+    Serial.print(":");
+    Serial.println(msg2);
+    screen.setLine(0, msg1);
+    screen.setLine(1, msg2);
+    while (true);
+}
 
 void setup() {
     Serial.begin(115200);
     while (!Serial);
     delay(500);
-    Serial.println("Base: Boot");
+    Serial.println("Base: Booting");
 
-    Wire.begin(LCD_SDA, LCD_SCL);
-    lcd.init();
-    lcd.backlight();
-    Serial.println("Base: LCD Init ok");
+    // User interface
+    screen.begin();
+    screen.setLine(0, APPNAME);
+    screen.setLine(1, "");
 
-    if (!radioMod.init(RFM69_SCK, RFM69_MISO, RFM69_MOSI, RFM69_CS, RFM69_IRQ, RFM69_RST)) {
-        Serial.println("Base: Stuck in radio init failure loop, freeze");
-        while (true);
-    }
-    Serial.println("Base: Radio init ok");
+    // Radio
+    if (!radioMod.init(radioPins, NODEID_RTKBASE, NETWORK_ID, RTCM_TX_FREQ)) {
+        haltUnit("Radio init", "Failure, freeze");
+    } else Serial.println("Radio init ok");
 
     if (!radioMod.verify()) {
-        Serial.println("Base: Radio verification failed, freeze");
-        while (true);
-    }
-    Serial.println("Base: Radio verified");
+        haltUnit("Radio verify", "Failure, freeze");
+    } else Serial.println("Radio verified");
+
+    // GNSS
+    gnss.begin(GNSS_BAUD, UART_RX, UART_TX);
+    if (!gnss.init()) {
+        haltUnit("Gnss init", "Failure, freeze");
+    }  else Serial.println("Gnss init ok");
+
+    if (gnss.detectUARTPort() == 0) {
+        haltUnit("Gnss port", "Failure, freeze");
+	} else Serial.println("Gnss port ok");
 
     pinMode(BTN_MENU, INPUT_PULLUP);
     pinMode(BTN_SELECT, INPUT_PULLUP);
@@ -91,27 +110,10 @@ void setup() {
     menu.begin();
     Serial.println("Base: Menu init ok");
 
-    gnss.begin(GNSS_BAUD, UART_RX, UART_TX);
-    if (!gnss.init()) {
-        Serial.println("Base: GPS comm init fail, freeze");
-        while (true);
-    }
-    if (gnss.detectUARTPort() == 0) {
-        Serial.println("Base: GPS port detection fail, freeze");
-        while (true);
-	}
-    Serial.println("Base: GPS init ok");
-
     baseState = BASESTATE::BASE_STARTING;
 }
 
 void loop() {
-    uint8_t rtcmBuf[1024];
-    size_t len = 0;
-
-    String line1 = "";
-    String line2 = "";
-    String cmd = "";
 
     switch (baseState) {
     case BASESTATE::BASE_STARTING: {
@@ -119,21 +121,25 @@ void loop() {
         break;
     }
     case BASESTATE::BASE_GETTINGFIX: {
-        Serial.print("BASE_GETTINGFIX > ");
 
         String line = SerialGNSS.readStringUntil('\n');
         line.trim();
 
-        if (line.startsWith("$GNGGA")) {
-            Serial.println(line);
-			gnss.parseGGA(line.c_str(), fix);
-            gnss.showFix(fix);
+        if (!line.startsWith("$GNGGA")) {
+            Serial.print("Awaiting $GNGGA");
+			Serial.println(line);   
+            screen.setLine(0, "Awaiting $GNGGA");
+            screen.setLine(1, line);
+        } else {
 
-            line1 = String(fix.fixType) + " " + gnss.fixTypeToString(fix.fixType);
-            line2 = "SIV: " + String(fix.SIV);
-            //Serial.print(" " + line1);
-            //Serial.println(", " + line2);
-            updateLCD(false, line1, line2);
+			gnss.parseGGA(line.c_str(), fix);
+
+            screen.setLine(0, String(fix.fixType) + ":" + gnss.fixTypeToString(fix.fixType));
+            screen.setLine(1, "SIV: " + String(fix.SIV));
+
+            // For debug
+            Serial.println(line);
+            gnss.showFix(fix);
 
             if (fix.fixType == 1 || fix.fixType==7) {
                 timeSurveyStart = millis();
@@ -150,9 +156,8 @@ void loop() {
         unsigned long elapsed = millis() - timeSurveyStart;
         if (elapsed < (SURVEYINTIME + 1) * 1000) {
             float err = 99.99;
-            line1 = "HDOP " + String(err, 2) + " m";
-            line2 = "Time left: " + String(((SURVEYINTIME * 1000) - elapsed) / 1000) + "s";
-            updateLCD(false, line1, line2);
+            screen.setLine(0, "HDOP " + String(err, 2) + "m");
+            screen.setLine(1, "Time left: " + String(((SURVEYINTIME * 1000) - elapsed) / 1000) + "s");
             break;
         }
         Serial.println("BASE_SURVEYING: Survey complete. Enabling RTCM...");
@@ -169,16 +174,17 @@ void loop() {
         break;
     }
     case BASESTATE::BASE_OPERATING: {
-        line1 = "Operating";
-        line2 = "***";
-        updateLCD(false, line1, line2);
+        uint8_t rtcmBuf[1024];
+        size_t len = 0;
 
+        screen.setLine(0, "Operating");
+        screen.setLine(1, "***");
 
         if (gnss.readRTCM(rtcmBuf, len)) {
             if (len > 0) {
-                radioMod.sendFragmentedRTCM(rtcmBuf, len);
                 uint16_t type = gnss.getRTCMBits(rtcmBuf, 24, 12);
-                Serial.printf("%4u: Sent %4zu bytes\n", type, len);
+                Serial.printf("%4zu bytes RTCM%4u\n", len, type);
+                radioMod.sendFragmentedRTCM(rtcmBuf, len);
             }
         }
         break;
@@ -186,5 +192,5 @@ void loop() {
     default:
         break;
     }
-    delay(100);
+    delay(10);
 }

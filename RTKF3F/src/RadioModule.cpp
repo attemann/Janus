@@ -4,25 +4,25 @@
 
 RadioModule::RadioModule(RFM69& radio) : _radio(radio) {}
 
-bool RadioModule::init(int sck, int miso, int mosi, int cs, int irq, int reset) {
-    SPI.begin(sck, miso, mosi, cs);
+bool RadioModule::init(RadioModule::HWPins pins, int nodeid, int networkid, int frequency) {
+    SPI.begin(pins.sck, pins.miso, pins.mosi, pins.cs);
 
-    if (reset != -1) {
-        pinMode(reset, OUTPUT);
-        digitalWrite(reset, LOW);
+    if (pins.reset != -1) {
+        pinMode(pins.reset, OUTPUT);
+        digitalWrite(pins.reset, LOW);
         delay(10);
-        digitalWrite(reset, HIGH);
+        digitalWrite(pins.reset, HIGH);
         delay(10);
     }
 
-    pinMode(irq, INPUT);
+    pinMode(pins.irq, INPUT);
 
-    if (!_radio.initialize(RF69_868MHZ, NODEID_RTKBASE, NETWORK_ID)) {
+    if (!_radio.initialize(RF69_868MHZ, nodeid, networkid)) {
         Serial.println("Radio init failed");
         return false;
     }
 
-    _radio.setFrequency(RTCM_TX_FREQ);
+    _radio.setFrequency(frequency);
     _radio.setHighPower();
     _radio.encrypt(NULL);
 
