@@ -3,6 +3,9 @@
 #include <Arduino.h>
 #include <RFM69.h>
 
+#define REG_BITRATEMSB 0x03
+#define REG_BITRATELSB 0x04
+
 class RadioModule {
 public:
     struct HWPins {
@@ -21,6 +24,8 @@ public:
     void sendFragmentedRTCM(const uint8_t* data, size_t len);
     bool receive(uint8_t*& data, uint8_t& len);
     void sendWithReturnFreq(uint8_t destNode, int destFreq, int returnFreq, const uint8_t* msg, uint8_t len);
+    void sendRTCMNumMessages();
+    int getRTCMNumMessages();
 
     // Nested RTCM Fragmenter class
     class RTCM_Fragmenter {
@@ -43,7 +48,7 @@ public:
         const uint8_t* getData() const;
         size_t getLength() const;
         void reset();
-
+        uint8_t getReceivedCount() const { return receivedCount; }
 
     private:
         uint8_t buffer[MAX_TOTAL_LEN];
@@ -57,4 +62,6 @@ public:
 private:
     RFM69& _radio;
     const uint8_t expectedVersion = 0x24;
+    int _numRTCMSent;
+    void setBitrate(RFM69& radio, uint16_t bitrate);
 };

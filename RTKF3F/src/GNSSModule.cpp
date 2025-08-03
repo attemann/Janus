@@ -3,6 +3,7 @@
 #include <RFM69.h>
 #include <HardwareSerial.h>
 #include "GNSSModule.h"
+#include <RTKF3F.h>
 
 GNSSModule::GNSSModule(HardwareSerial& serial)
     : _serial(serial), _nmeaIdx(0) {
@@ -10,6 +11,57 @@ GNSSModule::GNSSModule(HardwareSerial& serial)
 
 void GNSSModule::begin(uint32_t baud, int RX, int TX) {
     _serial.begin(baud, SERIAL_8N1, RX, TX);
+}
+
+void GNSSModule::setDefaultRTCMs() {
+    _rtcmCount = 6;
+    _rtcmList[0] = { "rtcm1006", 1.0f, true };
+    _rtcmList[1] = { "rtcm1033", 2.7f, true };
+    _rtcmList[2] = { "rtcm1074", 1.1f, true };
+    _rtcmList[3] = { "rtcm1084", 2.4f, true };
+    _rtcmList[4] = { "rtcm1094", 3.6f, true };
+    _rtcmList[5] = { "rtcm1124", 5.9f, true };
+}
+
+void GNSSModule::printRTCMConfig() {
+    Serial.println("RTCM Configuration:");
+    for (int i = 0; i < _rtcmCount; i++) {
+        const RTCMMessage& msg = _rtcmList[i];
+        Serial.printf("%d. %-10s | %5.2f Hz | %s\n",
+            i+1,
+            msg.name,
+            msg.frequencyHz,
+            msg.enabled ? "ENABLED" : "DISABLED");
+    }
+}
+
+void GNSSModule::sendConfiguredRTCMs() {
+
+    for (int i = 0; i < _rtcmCount; i++) {
+        if (_rtcmList[i].enabled) {
+            String cmd = String(_rtcmList[i].name) + " com2 " + String(_rtcmList[i].frequencyHz, 1) + "\r\n";
+            sendCommand(cmd);
+        }
+    }
+
+}
+
+const GNSSModule::RTCMMessage& GNSSModule::getRTCM(int index) const {
+    return _rtcmList[index];
+}
+
+int GNSSModule::getRTCMCount() const {
+    return _rtcmCount;
+}
+
+void GNSSModule::toggleRTCM(int index) {
+    if (index >= 0 && index < _rtcmCount)
+        _rtcmList[index].enabled = !_rtcmList[index].enabled;
+}
+
+void GNSSModule::setRTCMFrequency(int index, float hz) {
+    if (index >= 0 && index < _rtcmCount)
+        _rtcmList[index].frequencyHz = hz;
 }
 
 int GNSSModule::detectUARTPort() {
@@ -106,19 +158,19 @@ String GNSSModule::fixTypeToString(int fixType) {
 
 bool GNSSModule::readRTCM(uint8_t* buffer, size_t& len) {
     while (_serial.available()) {
-        if (_serial.read() != 0xD3) continue;
+        if (_serial.read() != MSG_RTCM) continue;
 
         while (_serial.available() < 2);
         uint8_t lenH = _serial.read();
         uint8_t lenL = _serial.read();
-        uint16_t payloadLen = ((lenH & 0x03) << 8) | lenL;
+        uint16_t payloadLen = ((lenH & MSG_RTCM) << 8) | lenL;
 
         if (payloadLen > 1023) return false;
 
         size_t totalLen = 3 + payloadLen + 3;
         while (_serial.available() < payloadLen + 3);
 
-        buffer[0] = 0xD3;
+        buffer[0] = MSG_RTCM;
         buffer[1] = lenH;
         buffer[2] = lenL;
         for (int i = 0; i < payloadLen + 3; i++) {
@@ -132,8 +184,8 @@ bool GNSSModule::readRTCM(uint8_t* buffer, size_t& len) {
 }
 
 bool GNSSModule::isValidRTCM(const uint8_t* data, size_t len) {
-    if (data[0] != 0xD3 || len < 6) return false;
-    uint16_t payloadLen = ((data[1] & 0x03) << 8) | data[2];
+    if (data[0] != MSG_RTCM || len < 6) return false;
+    uint16_t payloadLen = ((data[1] & MSG_RTCM) << 8) | data[2];
     uint32_t crc = calculateCRC24Q(data, 3 + payloadLen);
     uint32_t recvCrc = (data[3 + payloadLen] << 16) | (data[4 + payloadLen] << 8) | data[5 + payloadLen];
     return crc == recvCrc;
@@ -259,8 +311,6 @@ bool GNSSModule::parseGGA(const char* line, GNSSFix& fix) {
 
     return true;
 }
-
-
 
 const char* GNSSModule::getRTCMName(uint16_t type) {
     switch (type) {

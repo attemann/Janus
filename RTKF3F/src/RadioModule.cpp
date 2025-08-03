@@ -1,4 +1,4 @@
-//RadioModule.cpp
+﻿//RadioModule.cpp
 
 #include <Arduino.h>    
 #include "RadioModule.h"
@@ -24,11 +24,24 @@ bool RadioModule::init(RadioModule::HWPins pins, int nodeid, int networkid, int 
         return false;
     }
 
-    _radio.setFrequency(frequency);
     _radio.setHighPower();
+    _radio.setPowerLevel(31);
     _radio.encrypt(NULL);
+    _radio.setFrequency(frequency);
+
+    //setBitrate(_radio, 19200);  // Setter bitrate til 19200 bps
+    //Serial.printf("Radio bitrate: %u bps\n", _radio.getPower());
+    //Serial.printf("Radio bitrate: %u bps\n", _radio.getBitrate());
+
+    _numRTCMSent = 0;
 
     return true;
+}
+
+void RadioModule::setBitrate(RFM69& radio, uint16_t bitrate) {
+    uint16_t val = 32000000UL / bitrate;
+    radio.writeReg(REG_BITRATEMSB, val >> 8);
+    radio.writeReg(REG_BITRATELSB, val & 0xFF);
 }
 
 bool RadioModule::verify() {
@@ -46,16 +59,37 @@ bool RadioModule::receive(uint8_t*& data, uint8_t& len) {
 }
 
 void RadioModule::sendWithReturnFreq(uint8_t destNode, int destFreq, int returnFreq, const uint8_t* msg, uint8_t len) {
-    // Optional: stabilize before frequency change
     _radio.setMode(RF69_MODE_SLEEP);
+    delay(2);
     _radio.setFrequency(destFreq);
+    delay(2);
     _radio.setMode(RF69_MODE_TX);
-
+    delay(2);
     _radio.send(destNode, msg, len);
-
+    delay(2);
     _radio.setMode(RF69_MODE_SLEEP);
+    delay(2);
     _radio.setFrequency(returnFreq);
+    delay(2);
     _radio.setMode(RF69_MODE_RX);
+    delay(2);
+}
+
+void RadioModule::sendRTCMNumMessages() {
+    uint8_t packet[5];
+    packet[0] = MSG_RTCM_NUMSENT;  // tag
+
+    // Store numSent as big endian (network order)
+    packet[1] = (_numRTCMSent >> 24) & 0xFF;
+    packet[2] = (_numRTCMSent >> 16) & 0xFF;
+    packet[3] = (_numRTCMSent >> 8) & 0xFF;
+    packet[4] = _numRTCMSent & 0xFF;
+
+    _radio.send(0, packet, sizeof(packet));
+}
+
+int RadioModule::getRTCMNumMessages() {
+	return _numRTCMSent;
 }
 
 void RadioModule::sendRTCM(const uint8_t* data, size_t len) {
@@ -66,9 +100,11 @@ void RadioModule::sendRTCM(const uint8_t* data, size_t len) {
         _radio.send(0, data, len);
     }
     else {
-        // Too large ? fragment
+        // Too large → fragment
         sendFragmentedRTCM(data, len);
     }
+
+    _numRTCMSent++;
 }
 
 void RadioModule::sendFragmentedRTCM(const uint8_t* data, size_t len) {
@@ -77,22 +113,23 @@ void RadioModule::sendFragmentedRTCM(const uint8_t* data, size_t len) {
 
 // RTCM_Fragmenter implementation
 void RadioModule::RTCM_Fragmenter::sendFragmented(RFM69& radio, uint8_t destId, const uint8_t* data, size_t len) {
+    const uint8_t MAX_PAYLOAD = 58;  // adjusted for 61 byte total
     if (len > MAX_TOTAL_LEN) return;
 
-    uint8_t packet[MAX_PAYLOAD + 3];
+    uint8_t packet[61];  // max total length
     uint8_t totalChunks = (len + MAX_PAYLOAD - 1) / MAX_PAYLOAD;
 
     for (uint8_t i = 0; i < totalChunks; ++i) {
         size_t offset = i * MAX_PAYLOAD;
         size_t chunkLen = min((size_t)MAX_PAYLOAD, len - offset);
 
-        packet[0] = 0xA0;
-        packet[1] = totalChunks;
-        packet[2] = i;
+        packet[0] = MSG_RTCMFRAGMENT;
+        packet[1] = i;              // fragment index
+        packet[2] = totalChunks;    // total fragments
 
         memcpy(packet + 3, data + offset, chunkLen);
-        radio.send(destId, packet, chunkLen + 3);
-        delay(5);
+        radio.send(destId, packet, chunkLen + 3);  // total = header + payload
+        delay(5);  // allow radio time to settle
     }
 }
 
@@ -103,11 +140,13 @@ RadioModule::RTCM_Reassembler::RTCM_Reassembler()
 }
 
 void RadioModule::RTCM_Reassembler::acceptFragment(const uint8_t* data, size_t len) {
-    if (len < 4 || data[0] != 0xA0) return;
+    if (len < 4 || data[0] != MSG_RTCMFRAGMENT) return;
 
     uint8_t total = data[1];
     uint8_t index = data[2];
     if (total > MAX_FRAGMENTS || index >= total) return;
+
+	Serial.printf("RTCM_Reassembler: Accepting fragment %u of %u, length %zu\n", index, total, len);
 
     if (index == 0) {
         totalExpected = total;
@@ -148,3 +187,4 @@ void RadioModule::RTCM_Reassembler::reset() {
     receivedCount = 0;
     memset(fragmentReceived, 0, sizeof(fragmentReceived));
 }
+

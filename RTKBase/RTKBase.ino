@@ -7,6 +7,7 @@
 #include "RTKF3F.h"
 #include "LCD.h"
 #include "TwoButtonMenu.h"
+#include "RTKBase.h"
 
 #define APPNAME "RTKBase 1.0"
 
@@ -54,6 +55,8 @@ bool menuActive = true;
 unsigned long menuPressStart = 0;
 bool menuHeld = false;
 int timeSurveyStart = 0;
+bool showFix = false;
+bool showGngga = false;
 
 enum BASESTATE {
     BASE_STARTING,
@@ -100,6 +103,9 @@ void setup() {
         haltUnit("Gnss port", "Failure, freeze");
 	} else Serial.println("Gnss port ok");
 
+    gnss.setDefaultRTCMs();
+    gnss.printRTCMConfig();
+
     pinMode(BTN_MENU, INPUT_PULLUP);
     pinMode(BTN_SELECT, INPUT_PULLUP);
 
@@ -112,8 +118,15 @@ void setup() {
 
 void loop() {
 
+    readConsole();
+
+
     switch (baseState) {
     case BASESTATE::BASE_STARTING: {
+
+        gnss.sendCommand("unlog\r\n");
+        gnss.sendCommand("gpgga com2 1\r\n");
+        gnss.sendCommand("saveconfig\r\n");
         baseState = BASESTATE::BASE_GETTINGFIX;
         break;
     }
@@ -158,13 +171,11 @@ void loop() {
             break;
         }
         Serial.println("BASE_SURVEYING: Survey complete. Enabling RTCM...");
+        gnss.setDefaultRTCMs();
+
         gnss.sendCommand("unlog\r\n"); 
-        gnss.sendCommand("config signalgroup 1\r\n");
-        gnss.sendCommand("rtcm1006 com2 1\r\n");
-        gnss.sendCommand("rtcm1033 com2 2\r\n");
-        gnss.sendCommand("rtcm1074 com2 3\r\n");
-        gnss.sendCommand("rtcm1084 com2 4\r\n");
-        gnss.sendCommand("rtcm1230 com2 5\r\n");
+        //gnss.sendCommand("config signalgroup 1\r\n");
+        gnss.sendConfiguredRTCMs();
         gnss.sendCommand("saveconfig\r\n");
         Serial.println("BASE_SURVEYING: RTCM config done, entering OPERATING mode.");
         baseState = BASESTATE::BASE_OPERATING;
@@ -175,13 +186,15 @@ void loop() {
         size_t len = 0;
 
         screen.setLine(0, "Operating");
-        screen.setLine(1, "***");
+        screen.setLine(1, String(radioMod.getRTCMNumMessages()));
 
         if (gnss.readRTCM(rtcmBuf, len)) {
             if (len > 0) {
                 uint16_t type = gnss.getRTCMBits(rtcmBuf, 24, 12);
                 Serial.printf("%4zu bytes RTCM%4u\n", len, type);
                 radioMod.sendRTCM(rtcmBuf, len);
+                delay(20);
+				radioMod.sendRTCMNumMessages();  // Send traffic summary message
             }
         }
         break;

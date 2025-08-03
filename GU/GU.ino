@@ -21,6 +21,17 @@
 #define RFM69_MISO 20
 #define RFM69_MOSI 18
 
+const char* getMessageName(uint8_t id) {
+    switch (id) {
+    case MSG_RTCM_NUMSENT:     return "RTCM_NUMSENT";
+    case MSG_RTCM:             return "RTCM";
+    case MSG_RTCMFRAGMENT:     return "RTCMFRAGMENT";
+    case MSG_FLIGHT_SETTINGS:  return "FLIGHT_SETTINGS";
+    case MSG_REQ_POS:          return "REQ_POS";
+    default:                   return "UNKNOWN";
+    }
+}
+
 RadioModule::HWPins radioPins = {
     .sck   = RFM69_SCK,
     .miso  = RFM69_MISO,
@@ -56,6 +67,8 @@ void haltUnit(String msg1, String msg2) {
 
 Slope slope;
 
+int insertedRTCM = 0; // Counter for inserted RTCM messages 
+
 void setup() {
     Serial.begin(115200);
     while (!Serial);
@@ -83,7 +96,7 @@ void setup() {
 
     gnss.sendCommand("unlog\r\n");
     //gnss.sendReset();
-    gnss.sendCommand("config signalgroup 2\r\n");
+    //gnss.sendCommand("config signalgroup 2\r\n");
     gnss.sendCommand("mode rover uav\r\n");
     gnss.sendCommand("config rtk timeout 60\r\n");
     //gnss.sendCommand("config rtk reliability 3 1\r\n");
@@ -105,27 +118,44 @@ void loop() {
    if (radioMod.receive(data, len)) {
        if (len > 0) {
            switch (data[0]) {
-           case MSG_RTCM:  // Full RTCM message (sent in one radio packet)
+           case MSG_RTCM_NUMSENT:   // Traffic summary message
+               if (len == 5) {
+                   uint32_t numSent = (data[1] << 24) | (data[2] << 16) | (data[3] << 8) | data[4];
+                   //             123456789012345678901234567890
+                   Serial.printf("RTCMs transmitted: %3lu\n", numSent);
+                   //radioMod.sendRTCMNumMessages(); // Echo back the count
+               }
+               else Serial.println("Invalid RTCM traffic summary message length");
+               break;
+
+           case MSG_RTCM:   // Full RTCM message (sent in one radio packet)
                if (gnss.isValidRTCM(data, len)) {
                    SerialGNSS.write(data, len);
-                   Serial.printf("Full RTCM %u bytes sent to GNSS\n", len);
+                   uint16_t type = gnss.getRTCMBits(data, 24, 12);
+                   insertedRTCM++;
+                   //             123456789012345678901234567890
+                   Serial.printf("RTCMs inserted:    %3d, Now type [%4d] %3u bytes\n", insertedRTCM, type, len);
                }
-               else {
-                   Serial.println("Invalid full RTCM message");
-               }
+               else Serial.println("Invalid full RTCM message");
                break;
-           case MSG_RTCMFRAGMENT:  // Fragmented RTCM
+
+           case MSG_RTCMFRAGMENT:   // Fragmented RTCM
+			   //Serial.println("Received RTCM fragment");
                reassembler.acceptFragment(data, len);
                if (reassembler.isComplete()) {
+				   Serial.printf("RTCM fragment complete, %u fragments received\n", reassembler.getReceivedCount());
                    const uint8_t* rtcm = reassembler.getData();
                    size_t rtcmLen = reassembler.getLength();
 
                    if (gnss.isValidRTCM(rtcm, rtcmLen)) {
+					   Serial.println("Valid RTCM fragment received");
                        SerialGNSS.write(rtcm, rtcmLen);
-                   }
+				   }
+				   else Serial.println("Invalid RTCM fragment received");
                    reassembler.reset();
                }
                break;
+
            case MSG_FLIGHT_SETTINGS:
                Serial.println("Received Flight settings");
                if (len >= 9) {
@@ -144,15 +174,17 @@ void loop() {
                    initEventDetection();
                }
                break;
-
-           case MSG_REQ_POS: {
+           case MSG_REQ_POS:
                // send relative pos to base (true), not pilot (false)
                Serial.println("Received position request");
                txRelPos(fix, true);
                break;
-           }
            default:
-               Serial.printf("Unknown radio packet type: 0x%02X\n", data[0]);
+               Serial.printf("Unknown packet: 0x%02X (%s) len=%u", data[0], getMessageName(data[0]), len);
+               for (uint8_t i = 0; i < len; i++) {
+                   Serial.printf(" %02X", data[i]);
+               }
+               Serial.println();
                break;
            }
        }
@@ -160,6 +192,7 @@ void loop() {
 
   if (gnss.readGNSSData(fix, showGngga)) {
 	  if (showFix) gnss.showFix(fix);
+      Serial.println("---");
   }
   
   delay(5);

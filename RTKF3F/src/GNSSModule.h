@@ -5,6 +5,8 @@
 
 #define COMMANDDELAY 100
 
+
+
 class GNSSModule {
 public:
     struct GNSSFix {
@@ -38,6 +40,12 @@ public:
         bool rtkFix = false;
     };
 
+    struct RTCMMessage {
+        const char* name;
+        float frequencyHz;
+        bool enabled;
+    };
+
     GNSSModule(HardwareSerial& serial);
     void begin(uint32_t baud,int rx, int tx);
     int detectUARTPort();
@@ -54,14 +62,23 @@ public:
     void showFix(const GNSSFix& fix);
     bool parseGGA(const char* line, GNSSFix& fix);
     bool isValidRTCM(const uint8_t* data, size_t len);
+    void sendConfiguredRTCMs();  // Sender alle aktiverte meldinger
+    void setDefaultRTCMs();      // Setter default liste
+    void printRTCMConfig();
+    const RTCMMessage& getRTCM(int index) const;
+    int getRTCMCount() const;
+    void toggleRTCM(int index);
+    void setRTCMFrequency(int index, float hz);
+
 
 private:
     HardwareSerial& _serial;
     char _nmeaBuffer[100];
     size_t _nmeaIdx;
-
     uint32_t calculateCRC24Q(const uint8_t* data, size_t len);
-
+    static constexpr int maxRTCMs = 10;
+    RTCMMessage _rtcmList[maxRTCMs];
+    int _rtcmCount = 0;
 };
 
 

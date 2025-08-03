@@ -32,5 +32,8 @@
     <ClInclude Include="LCD.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="RTKBase.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

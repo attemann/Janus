@@ -15,13 +15,12 @@
 
 #define SLOPELENGTH 100
 
-
-#define MSG_RTCM              0xD3  // Full RTCM message	
-#define MSG_RTCMFRAGMENT      0x0A  // Fragmented RTCM
-
-#define MSG_GU_GPSSETTINGS    0x02  // GUGPS settings
-#define MSG_FLIGHT_SETTINGS   0x03  // Settings for the slope
-#define MSG_REQ_POS           0x04  // BS request to GU for position
+#define	MSG_RTCM_NUMSENT     0xB0
+#define	MSG_RTCM             0xD3
+#define	MSG_RTCMFRAGMENT     0x0A
+#define	MSG_FLIGHT_SETTINGS  0x03
+#define	MSG_REQ_POS          0x04
+#define	MSG_GU_GPSSETTINGS   0x02 
 
 #define RTCM_TX_FREQ 868100000 
 #define GU_TX_FREQ   868200000
