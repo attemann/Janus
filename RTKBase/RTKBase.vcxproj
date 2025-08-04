@@ -95,6 +95,7 @@
     <ProjectCapability Include="VisualMicro" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="DecimalSpeaker.h" />
     <ClInclude Include="LCD.h" />
     <ClInclude Include="RTKBase.h" />
     <ClInclude Include="TwoButtonMenu.h" />
