@@ -41,5 +41,8 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)src\RadioModule.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\RTKBase\DecimalSpeaker.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

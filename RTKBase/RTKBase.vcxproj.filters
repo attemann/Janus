@@ -35,8 +35,5 @@
     <ClInclude Include="RTKBase.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="DecimalSpeaker.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
 </Project>

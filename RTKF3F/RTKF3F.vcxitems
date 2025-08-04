@@ -26,6 +26,7 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\Slope.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="$(MSBuildThisFileDirectory)..\RTKBase\DecimalSpeaker.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\GNSSModule.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\MessageTypes.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\RadioModule.h" />
