@@ -10,7 +10,7 @@ phrases = [
     "point", "on",
     "satellites", "fix type", "getting fix", "survey", "operating", "RTCM",
     "launch", "outside", "inside", "Base A", "Base B", "course", "time",
-    "starting","error", "landed", "unknown",
+    "starting", "error", "information", "landed", "unknown",
     "seconds","minutes", "hours", "radio","gps","baseunit", "gu.unit","cd.unit"
 ]
 

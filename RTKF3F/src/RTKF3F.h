@@ -9,13 +9,29 @@
 
 #define MAX_GU_UNITS 5
 #define SLOPELENGTH 100
-#define	MSG_RTCM_NUMSENT     0xB0
+#define SURVEYINTIME 15
+
+// Const for airborne detection
+#define DETECTOR_BUFFER_SIZE 30  // 3 secs with 0.1s interval
+#define THRESHOLD_AIRBORNE 9.0f  // 3 m/s avg over 3 secs
+#define THRESHOLD_LANDED 1.0f    // 1 m/s avg over 3 secs
+
+// Message codes
 #define	MSG_RTCM             0xD3
 #define	MSG_RTCMFRAGMENT     0x0A
-#define	MSG_FLIGHT_SETTINGS  0x03
-#define	MSG_REQ_POS          0x04
-#define	MSG_GU_GPSSETTINGS   0x02 
-#define MSG_ERROR		     0xFF
+#define	MSG_RTCM_NUMSENT     0x0B
+
+#define	MSG_FLIGHT_SETTINGS  0xA0
+#define	MSG_REQ_POS          0xA1
+#define	MSG_GU_GPSSETTINGS   0xA2
+
+#define MSG_INFORMATION      0xF0
+#define MSG_ERROR		     0xF1
+#define MSG_SIV			     0xF2
+
+#define MSG_TYPE_G2B_EVENT   0xB1
+#define MSG_TYPE_G2B_RELPOS  0xB2
+#define MSG_TYPE_G2B_MISC    0xB3
 
 // Radio errors
 #define ERROR_RADIO_INIT     0
@@ -25,6 +41,26 @@
 #define ERROR_UART           10
 #define ERROR_COM            11
 
+// Unknown error code
+#define ERROR_UNKNOWN        99 
+
+// INFORMATION MESSGAGE CODES
+// BASE TRANSITION CODES
+#define INFO_TRANSITION_GETTINGFIX 0x01 
+#define INFO_TRANSITION_SURVEYING  0x02
+#define INFO_TRANSITION_OPERATING  0x03
+#define INFO_FIX_NOFIX	           0x04  
+#define INFO_FIX_GPS	           0x05
+#define INFO_FIX_DGPS			   0x06
+#define INFO_FIX_PPS		       0x07
+#define INFO_FIX_RTK_FLOAT		   0x08
+#define INFO_FIX_RTK_FIX		   0x09
+#define INFO_FIX_DEAD_RECKONING    0x0A
+#define INFO_FIX_MANUAL        	   0x0B
+#define INFO_FIX_SIM		       0x0C
+#define INFO_FIX_OTHER		       0x0D
+
+
 #define RTCM_TX_FREQ 868100000 
 #define GU_TX_FREQ   868200000
 
@@ -33,14 +69,6 @@
 #define NODEID_GU		 3
 #define NETWORK_ID		 100
 
-// MISC
-#define SURVEYINTIME 15
-
-// Const for airborne detection
-#define DETECTOR_BUFFER_SIZE 30  // 3 secs with 0.1s interval
-#define THRESHOLD_AIRBORNE 9.0f  // 3 m/s avg over 3 secs
-#define THRESHOLD_LANDED 1.0f    // 1 m/s avg over 3 secs
-
 // UBX sync bytes and message details
 #define UBX_SYNC1            0xB5
 #define UBX_SYNC2            0x62
@@ -48,7 +76,7 @@
 #define UBX_ID_RELPOSNED     0x3C
 #define UBX_RELPOSNED_LEN    40
 
-enum class BSTaskState {
+enum class F3FTaskState {
 	TASK_UNKNOWN,
 	//  TASK_INSIDE_A,
 	TASK_OUTSIDE_A,
@@ -81,11 +109,11 @@ enum class EventCode : uint8_t {
 };
 
 // === Status bit flags (Bits 3–0 of Byte 1 + bit 4 in Byte 2) ===
-constexpr uint8_t STATUS_LINK_OK = 0x01;  // Or define separately if needed
-constexpr uint8_t STATUS_RTK_FLOAT = 0x02;
-constexpr uint8_t STATUS_RTK_FIX = 0x04;
-constexpr uint8_t STATUS_GPS_FIX = 0x08;
-constexpr uint8_t STATUS_DGNSS_USED = 0x10;
+//constexpr uint8_t STATUS_LINK_OK = 0x01;  // Or define separately if needed
+//constexpr uint8_t STATUS_RTK_FLOAT = 0x02;
+//constexpr uint8_t STATUS_RTK_FIX = 0x04;
+//constexpr uint8_t STATUS_GPS_FIX = 0x08;
+//constexpr uint8_t STATUS_DGNSS_USED = 0x10;
 
 // === Packet format for messages from GU to BS ===
 // Byte 0: GLIDER_ID       (uint8_t, 0–255)
@@ -106,11 +134,6 @@ enum class AckCode : uint8_t {
 	ACK_OK = 0x00,
 	ACK_ERROR = 0x01,  // Optional future use
 };
-
-// Message Types
-#define MSG_TYPE_G2B_EVENT  0b00
-#define MSG_TYPE_G2B_RELPOS 0b01
-#define MSG_TYPE_G2B_MISC   0b10
 
 // Decoding helpers
 inline uint8_t decodeMsgType(uint8_t header) {

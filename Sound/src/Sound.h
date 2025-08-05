@@ -99,6 +99,52 @@ public:
         playNumberFile(errorCode);
 	}
 
+    void speakInfo(int infoCode) {
+        if (infoCode < 0) return;
+
+        playWavFile("/information.wav");
+        speakInt(infoCode);
+    }
+
+    void speakInt(int value) {
+        if (value < 0) return;
+        if (value > 9999) value = 9999;
+
+        // Thousands
+        if (value >= 1000) {
+            int thousands = value / 1000;
+            playNumberFile(thousands);
+            playWavFile("/thousand.wav"); // "thousand"
+            value %= 1000;
+        }
+
+        // Hundreds
+        if (value >= 100) {
+            int hundreds = value / 100;
+            playNumberFile(hundreds);
+            playNumberFile(100); // "hundred"
+            value %= 100;
+        }
+
+        // 0–99: use optimal grouping (no redundant "zero")
+        if (value > 0) {
+            if (value <= 20) {
+                playNumberFile(value);
+            }
+            else {
+                int tens = value / 10 * 10;
+                int ones = value % 10;
+                playNumberFile(tens);
+                if (ones > 0) playNumberFile(ones);
+            }
+        }
+        else if (value == 0 && (value == 0 || (value < 100 && value > 0))) {
+            // For e.g., "one thousand zero"
+            // Only speak "zero" if entire value was zero, or after "thousand" or "hundred" as needed
+            playNumberFile(0);
+        }
+    }
+
     void speakTime(float value) {
         if (value < 0) return;
         if (value > 99.99f) value = 99.99f;

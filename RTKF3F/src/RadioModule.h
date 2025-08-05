@@ -20,12 +20,15 @@ public:
     RadioModule(RFM69& radio);
     bool init(RadioModule::HWPins pins, int nodeid, int networkid, int frequency);
     bool verify();
+    void sendMessageCode(int destNode, int msgType, int msgCode);
     void sendRTCM(const uint8_t* data, size_t len);
     void sendFragmentedRTCM(const uint8_t* data, size_t len);
     bool receive(uint8_t*& data, uint8_t& len);
     void sendWithReturnFreq(uint8_t destNode, int destFreq, int returnFreq, const uint8_t* msg, uint8_t len);
     void sendRTCMNumMessages();
     int getRTCMNumMessages();
+	int getSenderId();
+	int getTargetId();
 
     // Nested RTCM Fragmenter class
     class RTCM_Fragmenter {

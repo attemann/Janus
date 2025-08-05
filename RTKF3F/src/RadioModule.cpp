@@ -49,6 +49,14 @@ bool RadioModule::verify() {
     return version == expectedVersion;
 }
 
+int RadioModule::getSenderId() {
+	return _radio.SENDERID;
+}
+
+int RadioModule::getTargetId() {
+	return _radio.TARGETID;
+}
+
 bool RadioModule::receive(uint8_t*& data, uint8_t& len) {
     if (_radio.receiveDone()) {
         data = _radio.DATA;
@@ -60,19 +68,27 @@ bool RadioModule::receive(uint8_t*& data, uint8_t& len) {
 
 void RadioModule::sendWithReturnFreq(uint8_t destNode, int destFreq, int returnFreq, const uint8_t* msg, uint8_t len) {
     _radio.setMode(RF69_MODE_SLEEP);
-    delay(2);
+    delay(1);
     _radio.setFrequency(destFreq);
-    delay(2);
+    delay(1);
     _radio.setMode(RF69_MODE_TX);
-    delay(2);
+    delay(1);
     _radio.send(destNode, msg, len);
-    delay(2);
+    delay(1);
     _radio.setMode(RF69_MODE_SLEEP);
-    delay(2);
+    delay(1);
     _radio.setFrequency(returnFreq);
-    delay(2);
+    delay(1);
     _radio.setMode(RF69_MODE_RX);
-    delay(2);
+    delay(1);
+}
+
+void RadioModule::sendMessageCode(int destNode, int msgType, int msgCode) {
+    uint8_t packet[2];
+    packet[0] = msgType;  // tag
+    packet[1] = msgCode;
+
+    sendWithReturnFreq(destNode, GU_TX_FREQ, RTCM_TX_FREQ, packet, sizeof(packet));
 }
 
 void RadioModule::sendRTCMNumMessages() {

@@ -5,14 +5,6 @@
 #define SLOPE_H
 
 class Slope {   
-private:
-    int glider=2;
-    int angle=180;
-    bool aBaseOnLeft = false;
-
-    int offsetNorth=0;
-    int offsetEast=0;
-    int offsetDown=0;  
 
 public:
     void setGliderId(int g);
@@ -26,6 +18,15 @@ public:
     void toggleABaseSide();
     void setPilotOffsetNED(int north, int east, int down);
     void getPilotOffsetNED(int &north, int &east, int &down) const;
+
+private:
+    int glider = 2;
+    int angle = 180;
+    bool aBaseOnLeft = false;
+
+    int offsetNorth = 0;
+    int offsetEast = 0;
+    int offsetDown = 0;
 };
 
 #endif

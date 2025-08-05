@@ -11,7 +11,7 @@
 #include <Sound.h>
 
 #define APPNAME  "CD 1.0"  
-#define I_AM     "/cd.unit.wav"
+#define MY_WAV_FILE     "/cd.unit.wav"
 
 // Radio
 #define RFM69_CS 21
@@ -52,19 +52,31 @@ void setup() {
     Serial.printf("%s starting\r\n", APPNAME);
     speaker.begin(0.1, 26, 22, 25);
 
-    speaker.playWavFile(I_AM);
+    speaker.playWavFile("/RTCM.wav");
+    speaker.speakInt(1006);
+    delay(500);
+    speaker.playWavFile("/RTCM.wav");
+    speaker.speakInt(1084);
+    delay(500);
+    while (1);
+
+    speaker.playWavFile(MY_WAV_FILE);
     speaker.playWavFile("/starting.wav");   
+    delay(500);
+
 
     // Radio
     if (!radioMod.init(radioPins, NODEID_CD, NETWORK_ID, GU_TX_FREQ)) {
-        speaker.playWavFile(I_AM);
+        speaker.playWavFile(MY_WAV_FILE);
+        speaker.playWavFile("/radio.wav");
 		speaker.speakError(ERROR_RADIO_INIT);
         haltUnit("Radio init", "Failure, freeze");
     }
     else Serial.println("Radio init ok");
 
     if (!radioMod.verify()) {
-        speaker.playWavFile(I_AM);
+        speaker.playWavFile(MY_WAV_FILE);
+        speaker.playWavFile("/radio.wav");
         speaker.speakError(ERROR_RADIO_VERIFY);
         haltUnit("Radio verify", "Failure, freeze");
     }
@@ -73,16 +85,40 @@ void setup() {
 
 
 void loop() {
-    speaker.speakTime(69.70);
+    uint8_t* data = nullptr;
+    uint8_t len = 0;
+    int senderId = 0;
+    const char* originWav;
 
-    delay(500);
-    speaker.playWavFile("/gu.unit.wav");
-    speaker.playWavFile("/outside.wav");
-    speaker.playWavFile("/Base_A.wav");
-    delay(500);
+    if (radioMod.receive(data, len)) {
+        if (len > 0) {
 
-    speaker.speakTime(13.42);
-    delay(500);
+            senderId = radioMod.getSenderId();
+            if (senderId == NODEID_RTKBASE) originWav = "/base.wav";
+            if (senderId == NODEID_GU)      originWav = "/gu.unit.wav";
 
-
+            switch (data[0]) {
+            case MSG_INFORMATION:
+                speaker.playWavFile(originWav);
+                speaker.speakInfo(data[1]);
+				Serial.printf("MSG_INFORMATION [%02X] from %d\n", data[1],senderId);
+                break;
+            case MSG_ERROR:
+                speaker.playWavFile(originWav);
+                speaker.speakError(data[1]);
+                Serial.printf("MSG_ERROR       [%02X] from %d\n", data[1], senderId);
+                break;
+			case MSG_SIV:  
+                speaker.playWavFile(originWav);
+                speaker.playNumberFile(data[1]);
+                speaker.playWavFile("/satellites.wav");
+                Serial.printf("MSG_SIV         [%02X] from %d\n", data[1], senderId);
+            default:
+                speaker.playWavFile(originWav);
+                speaker.speakError(ERROR_UNKNOWN);
+                Serial.printf("Unknown message [%02X] from %d\n", data[1], senderId);
+                break;
+            }
+        }
+    }
 }

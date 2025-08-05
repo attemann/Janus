@@ -121,9 +121,7 @@ void loop() {
            case MSG_RTCM_NUMSENT:   // Traffic summary message
                if (len == 5) {
                    uint32_t numSent = (data[1] << 24) | (data[2] << 16) | (data[3] << 8) | data[4];
-                   //             123456789012345678901234567890
                    Serial.printf("RTCMs transmitted: %3lu\n", numSent);
-                   //radioMod.sendRTCMNumMessages(); // Echo back the count
                }
                else Serial.println("Invalid RTCM traffic summary message length");
                break;
@@ -133,7 +131,6 @@ void loop() {
                    SerialGNSS.write(data, len);
                    uint16_t type = gnss.getRTCMBits(data, 24, 12);
                    insertedRTCM++;
-                   //             123456789012345678901234567890
                    Serial.printf("RTCMs inserted:    %3d, Now type [%4d] %3u bytes\n", insertedRTCM, type, len);
                }
                else Serial.println("Invalid full RTCM message");

@@ -6,17 +6,9 @@
 
 #include "RTKF3F.h"
 #include "LCD.h"
-#include "TwoButtonMenu.h"
 #include "RTKBase.h"
 
 #define APPNAME "RTKBase 1.0"
-
-
-
-// BUTTONS
-#define BTN_MENU       12
-#define BTN_SELECT     13
-#define HOLD_TIME      800
 
 //RADIO
 #define RFM69_IRQ       4
@@ -38,7 +30,7 @@ RadioModule::HWPins radioPins = {
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 LCDManager screen(lcd);
 
-TwoButtonMenu menu(lcd);
+//TwoButtonMenu menu(lcd);
 
 RFM69 radio(radioPins.cs, radioPins.irq, true);
 RadioModule radioMod(radio);
@@ -49,23 +41,25 @@ RadioModule radioMod(radio);
 #define UART_TX 17
 HardwareSerial SerialGNSS(2);
 GNSSModule gnss(SerialGNSS);
-GNSSModule::GNSSFix fix;
 
-bool menuActive = true;
-unsigned long menuPressStart = 0;
-bool menuHeld = false;
+GNSSModule::GNSSFix fix;
+int oldFixType = 0; // Store the last fix type to detect changes
+
 int timeSurveyStart = 0;
 bool showFix = false;
 bool showGngga = false;
 
-enum BASESTATE {
-    BASE_STARTING,
-    BASE_GETTINGFIX,
-    BASE_SURVEYING,
-    BASE_OPERATING,
-    BASE_MENU
+unsigned int timeLastSpeak = 0; // Last time we spoke a message 
+#define DELAYBETWEENSPEAK    5000 // 5 seconds delay between spoken messages
+
+enum DEVICESTATE {
+    DEVICE_STARTING,
+    DEVICE_GETTINGFIX,
+    DEVICE_SURVEYING,
+    DEVICE_OPERATING,
+    DEVICE_MENU
 };
-BASESTATE baseState = BASESTATE::BASE_STARTING;
+DEVICESTATE deviceState = DEVICESTATE::DEVICE_STARTING;
 
 void haltUnit(String msg1, String msg2) {
     Serial.print(msg1);
@@ -89,10 +83,12 @@ void setup() {
 
     // Radio
     if (!radioMod.init(radioPins, NODEID_RTKBASE, NETWORK_ID, RTCM_TX_FREQ)) {
+		radioMod.sendMessageCode(0,MSG_ERROR, ERROR_RADIO_INIT);   
         haltUnit("Radio init", "Failure, freeze");
     } else Serial.println("Radio init ok");
 
     if (!radioMod.verify()) {
+        radioMod.sendMessageCode(0, MSG_ERROR, ERROR_RADIO_VERIFY);
         haltUnit("Radio verify", "Failure, freeze");
     } else Serial.println("Radio verified");
 
@@ -100,37 +96,32 @@ void setup() {
     gnss.begin(GNSS_BAUD, UART_RX, UART_TX);
 
     if (gnss.detectUARTPort() == 0) {
+        radioMod.sendMessageCode(0, MSG_ERROR, ERROR_UART);
         haltUnit("Gnss port", "Failure, freeze");
 	} else Serial.println("Gnss port ok");
 
     gnss.setDefaultRTCMs();
     gnss.printRTCMConfig();
 
-    pinMode(BTN_MENU, INPUT_PULLUP);
-    pinMode(BTN_SELECT, INPUT_PULLUP);
-
-    menu.addItem("Set Survey T", { "30s", "60s", "120s" });
-    menu.begin();
-    Serial.println("Base: Menu init ok");
-
-    baseState = BASESTATE::BASE_STARTING;
+    deviceState = DEVICESTATE::DEVICE_STARTING;
 }
 
 void loop() {
 
     readConsole();
 
-
-    switch (baseState) {
-    case BASESTATE::BASE_STARTING: {
+    switch (deviceState) {
+    case DEVICESTATE::DEVICE_STARTING: {
 
         gnss.sendCommand("unlog\r\n");
         gnss.sendCommand("gpgga com2 1\r\n");
         gnss.sendCommand("saveconfig\r\n");
-        baseState = BASESTATE::BASE_GETTINGFIX;
+
+        deviceState = DEVICESTATE::DEVICE_GETTINGFIX;
+		radioMod.sendMessageCode(0, MSG_INFORMATION, INFO_TRANSITION_GETTINGFIX);
         break;
     }
-    case BASESTATE::BASE_GETTINGFIX: {
+    case DEVICESTATE::DEVICE_GETTINGFIX: {
 
         String line = SerialGNSS.readStringUntil('\n');
         line.trim();
@@ -147,6 +138,11 @@ void loop() {
             screen.setLine(0, String(fix.fixType) + ":" + gnss.fixTypeToString(fix.fixType));
             screen.setLine(1, "SIV: " + String(fix.SIV));
 
+            if (millis() - timeLastSpeak > DELAYBETWEENSPEAK) {
+				radioMod.sendMessageCode(0, MSG_SIV, fix.SIV);
+                timeLastSpeak = millis();
+			}
+
             // For debug
             Serial.println(line);
             gnss.showFix(fix);
@@ -157,12 +153,13 @@ void loop() {
                 gnss.sendCommand("mode base time " + String(SURVEYINTIME) + " com2\r\n");
                 gnss.sendCommand("saveconfig\r\n");
 
-                baseState = BASESTATE::BASE_SURVEYING;
+                deviceState = DEVICESTATE::DEVICE_SURVEYING;
+				radioMod.sendMessageCode(0, MSG_INFORMATION, INFO_TRANSITION_SURVEYING);
             }
         }
         break;
     }
-    case BASESTATE::BASE_SURVEYING: {
+    case DEVICESTATE::DEVICE_SURVEYING: {
         unsigned long elapsed = millis() - timeSurveyStart;
         if (elapsed < (SURVEYINTIME + 1) * 1000) {
             float err = 99.99;
@@ -174,14 +171,15 @@ void loop() {
         gnss.setDefaultRTCMs();
 
         gnss.sendCommand("unlog\r\n"); 
-        //gnss.sendCommand("config signalgroup 1\r\n");
         gnss.sendConfiguredRTCMs();
         gnss.sendCommand("saveconfig\r\n");
         Serial.println("BASE_SURVEYING: RTCM config done, entering OPERATING mode.");
-        baseState = BASESTATE::BASE_OPERATING;
+
+        deviceState = DEVICESTATE::DEVICE_OPERATING;
+		radioMod.sendMessageCode(0, MSG_INFORMATION, INFO_TRANSITION_OPERATING);
         break;
     }
-    case BASESTATE::BASE_OPERATING: {
+    case DEVICESTATE::DEVICE_OPERATING: {
         uint8_t rtcmBuf[1024];
         size_t len = 0;
 
@@ -202,5 +200,30 @@ void loop() {
     default:
         break;
     }
+
+    if (fix.fixType != oldFixType) {
+		switch (fix.fixType) {
+            case 0: // No fix
+                radioMod.sendMessageCode(0, MSG_INFORMATION, INFO_FIX_NOFIX);
+			    break;
+            case 1: // GPS fix
+				radioMod.sendMessageCode(0, MSG_INFORMATION, INFO_FIX_GPS);
+                break;
+			case 2: // DGPS fix     
+                radioMod.sendMessageCode(0, MSG_INFORMATION, INFO_FIX_DGPS);
+				break;
+            case 3: // RTK float
+                radioMod.sendMessageCode(0, MSG_INFORMATION, INFO_FIX_RTK_FLOAT);
+                break;
+            case 4: // RTK fixed
+                radioMod.sendMessageCode(0, MSG_INFORMATION, INFO_FIX_RTK_FIX);
+                break;
+            default: // Other fix types
+                radioMod.sendMessageCode(0, MSG_INFORMATION, INFO_FIX_OTHER);
+                break;
+        }
+		oldFixType = fix.fixType;
+
+	}
     delay(10);
 }
