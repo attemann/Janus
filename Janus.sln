@@ -109,6 +109,7 @@ Global
 		RTKF3F\RTKF3F.vcxitems*{8f8217f7-1123-477c-8dbb-03e8b3d88936}*SharedItemsImports = 4
 		RTKF3F\RTKF3F.vcxitems*{c1024f6f-755e-4709-adc0-2833394e992c}*SharedItemsImports = 9
 		Sound\Sound.vcxitems*{c8d7f230-8489-4352-9709-229822070967}*SharedItemsImports = 9
+		RTKF3F\RTKF3F.vcxitems*{d75b4ddd-fcc6-4ea4-ac7b-7a8c67eaf00d}*SharedItemsImports = 4
 		Sound\Sound.vcxitems*{d75b4ddd-fcc6-4ea4-ac7b-7a8c67eaf00d}*SharedItemsImports = 4
 	EndGlobalSection
 EndGlobal
