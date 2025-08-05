@@ -32,16 +32,10 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)src\Slope.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="$(MSBuildThisFileDirectory)src\MessageTypes.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)src\GNSSModule.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)src\RadioModule.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="$(MSBuildThisFileDirectory)..\RTKBase\DecimalSpeaker.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

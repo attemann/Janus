@@ -3,8 +3,7 @@
   <PropertyGroup Label="Globals">
     <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
     <HasSharedItems>true</HasSharedItems>
-    <ItemsProjectGuid>{c1024f6f-755e-4709-adc0-2833394e992c}</ItemsProjectGuid>
-    <ItemsRootNamespace>RTKF3F</ItemsRootNamespace>
+    <ItemsProjectGuid>{c8d7f230-8489-4352-9709-229822070967}</ItemsProjectGuid>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
@@ -17,17 +16,9 @@
   <ItemGroup>
     <Text Include="$(MSBuildThisFileDirectory)readme.txt" />
     <Text Include="$(MSBuildThisFileDirectory)library.properties" />
-    <Text Include="$(MSBuildThisFileDirectory)src\RTKF3F.h" />
   </ItemGroup>
   <ItemGroup>
-    <!-- <ClInclude Include="$(MSBuildThisFileDirectory)RTKF3F.h" /> -->
-    <ClCompile Include="$(MSBuildThisFileDirectory)src\GNSSModule.cpp" />
-    <ClCompile Include="$(MSBuildThisFileDirectory)src\RadioModule.cpp" />
-    <ClCompile Include="$(MSBuildThisFileDirectory)src\Slope.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="$(MSBuildThisFileDirectory)src\GNSSModule.h" />
-    <ClInclude Include="$(MSBuildThisFileDirectory)src\RadioModule.h" />
-    <ClInclude Include="$(MSBuildThisFileDirectory)src\Slope.h" />
+    <!-- <ClInclude Include="$(MSBuildThisFileDirectory)Sound.h" /> -->
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\Sound.h" />
   </ItemGroup>
 </Project>

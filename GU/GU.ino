@@ -76,7 +76,7 @@ void setup() {
     Serial.printf("%s booting\r\n", APPNAME);
 
     // Radio
-    if (!radioMod.init(radioPins, NODEID_GU, NETWORK_ID, RTCM_TX_FREQ)) {
+    if (!radioMod.init(radioPins, NODEID_GU, NETWORK_ID, GU_TX_FREQ)) {
         haltUnit("Radio init", "Failure, freeze");
     }
     else Serial.println("Radio init ok");
