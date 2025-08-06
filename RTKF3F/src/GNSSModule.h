@@ -5,8 +5,6 @@
 
 #define COMMANDDELAY 100
 
-
-
 class GNSSModule {
 public:
     struct GNSSFix {
@@ -69,6 +67,7 @@ public:
     int getRTCMCount() const;
     void toggleRTCM(int index);
     void setRTCMFrequency(int index, float hz);
+    uint8_t fixStatus(GNSSModule::GNSSFix fix);
 
 
 private:

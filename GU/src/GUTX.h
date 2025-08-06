@@ -12,7 +12,6 @@
   //   glider_id     : 0–255 unique ID of glider
   //   event         : EventCode enum (4 bits)
   //   status_flags  : Status bitfield (use STATUS_* constants from EventFormat.h)
-  void txEvent(EventCode event, uint8_t status_flags);
   void txRelPos(GNSSModule::GNSSFix fix, bool isRelativeToBase);
   void txMsg(uint8_t msgCode);
   uint8_t fixStatus(GNSSModule::GNSSFix fix);

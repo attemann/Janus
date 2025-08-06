@@ -2,7 +2,7 @@
 #include <Arduino.h>
 #include <math.h>
 #include <RTKF3F.h>
-#include <Const.h>
+//#include <Const.h>
 
 extern Slope slope;
 

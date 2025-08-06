@@ -20,8 +20,10 @@ public:
     RadioModule(RFM69& radio);
     bool init(RadioModule::HWPins pins, int nodeid, int networkid, int frequency);
     bool verify();
-    void sendMessageCode(int destNode, int msgType, int msgCode);
+    void sendMessageCode(int destNode, int destFreq, int returnFreq, int msgType, int msgCode);
     void sendRTCM(const uint8_t* data, size_t len);
+    void sendRTCMTest(int len);
+    void printRTCMSegment(const uint8_t* data, size_t len);
     void sendFragmentedRTCM(const uint8_t* data, size_t len);
     bool receive(uint8_t*& data, uint8_t& len);
     void sendWithReturnFreq(uint8_t destNode, int destFreq, int returnFreq, const uint8_t* msg, uint8_t len);
@@ -34,7 +36,7 @@ public:
     class RTCM_Fragmenter {
     public:
         static const uint8_t MAX_PAYLOAD = 61;
-        static const uint8_t MAX_TOTAL_LEN = 255;
+        static const uint16_t MAX_TOTAL_LEN = 1029;
 
         static void sendFragmented(RFM69& radio, uint8_t destId, const uint8_t* data, size_t len);
     };
@@ -67,4 +69,10 @@ private:
     const uint8_t expectedVersion = 0x24;
     int _numRTCMSent;
     void setBitrate(RFM69& radio, uint16_t bitrate);
+
+    bool isValidRTCM(const uint8_t* data, size_t len);
+    uint32_t calculateCRC24Q(const uint8_t* data, size_t len);
+    void sendRTCMFragment(const uint8_t* data, size_t len, int fragmentIndex);
+    void sendRTCMNumSent();
+	void sendRTCMFragmented(const uint8_t* data, size_t len);
 };

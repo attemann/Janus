@@ -2,8 +2,9 @@
 #include <Arduino.h>    
 #include <RFM69.h>
 #include <HardwareSerial.h>
-#include "GNSSModule.h"
 #include <RTKF3F.h>
+
+#include "GNSSModule.h"
 
 GNSSModule::GNSSModule(HardwareSerial& serial)
     : _serial(serial), _nmeaIdx(0) {
@@ -76,6 +77,8 @@ int GNSSModule::detectUARTPort() {
         delay(100);
         _serial.print(testCommands[port - 1]);
         _serial.print("\r\n");
+
+		Serial.println("GNSS: Testing port " + String(port) + " with command: " + testCommands[port - 1]);
 
         unsigned long startTime = millis();
         String response = "";

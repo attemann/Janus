@@ -87,27 +87,66 @@ void loop() {
             if (senderId == NODEID_RTKBASE) originWav = "/baseunit.wav";
             if (senderId == NODEID_GU)      originWav = "/gu.unit.wav";
 
+            speaker.playWavFile(originWav);
+
             switch (data[0]) {
-            case MSG_INFORMATION:
+            case MSG_INFORMATION: 
                 Serial.printf("MSG_INFORMATION [%02X] from %d\n", data[1], senderId);
-                speaker.playWavFile(originWav);
-                speaker.speakInfo(data[1]);
+                switch (data[1]) {
+                case INFO_DEVICE_STARTING:
+                    speaker.speakStarting();
+                    break;
+                case INFO_TRANSITION_GETTINGFIX:
+                    speaker.speakGettingFix();
+					speaker.speakFix(data[1] - 4);  
+					break;
+                case INFO_TRANSITION_SURVEYING:
+                    speaker.speakSurveyIn();
+                    break;
+                case INFO_TRANSITION_OPERATING:
+                    speaker.speakOperating();
+                    break;
+                case INFO_FIX_NOFIX:
+				case INFO_FIX_GPS:
+				case INFO_FIX_DGPS:
+				case INFO_FIX_RTK_FLOAT:
+				case INFO_FIX_RTK_FIX:
+				case INFO_FIX_DEAD_RECKONING:
+				case INFO_FIX_MANUAL:   
+				case INFO_FIX_SIM:  
+				case INFO_FIX_OTHER:    
+				case INFO_FIX_PPS:
+                    speaker.speakFix(data[1] - 4);
+                    break;
+                default:
+                    Serial.printf("Unknown info code [%02X] from %d\n", data[1], senderId);
+                    speaker.speakInfo(data[1]);
+                    break;
+                }
                 break;
             case MSG_ERROR:
                 Serial.printf("MSG_ERROR       [%02X] from %d\n", data[1], senderId);
-                speaker.playWavFile(originWav);
+                switch (data[1]) {
+                    case ERROR_RADIO_INIT:
+                        speaker.playWavFile("/radio.wav");
+					    break;
+                    case ERROR_UART:    
+						speaker.playWavFile("/gps.wav");
+                        break;
+                    default:
+                        break;
+                }
                 speaker.speakError(data[1]);
 
                 break;
 			case MSG_SIV: 
                 Serial.printf("MSG_SIV         [%02X] from %d\n", data[1], senderId);
-                speaker.playWavFile(originWav);
+
                 speaker.playNumberFile(data[1]);
                 speaker.playWavFile("/satellites.wav");
                 break;
             default:
                 Serial.printf("Unknown message [%02X] from %d\n", data[1], senderId);
-                speaker.playWavFile(originWav);
                 speaker.speakError(ERROR_UNKNOWN);
                 break;
             }

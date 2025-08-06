@@ -90,7 +90,6 @@ public:
     }
 
     void speakError(int errorCode) {
-        if (errorCode < 0 || errorCode > 99) return;
 
         playWavFile("/error.wav");
         if (errorCode < 10) {
@@ -104,6 +103,28 @@ public:
 
         playWavFile("/information.wav");
         speakInt(infoCode);
+    }
+
+    void speakFix(int fix) {
+        if (fix < 0 || fix > 9) return;
+        playWavFile("/fix.wav");
+        playNumberFile(fix);
+	}
+
+    void speakStarting() {
+        playWavFile("/starting.wav");
+	}
+
+    void speakGettingFix() {
+        playWavFile("/getting_fix.wav");
+    }
+
+    void speakSurveyIn() {
+        playWavFile("/survey.wav");
+    }
+
+    void speakOperating() {
+        playWavFile("/operating.wav");
     }
 
     void speakInt(int value) {

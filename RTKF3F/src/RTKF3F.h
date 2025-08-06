@@ -59,7 +59,7 @@
 #define INFO_FIX_MANUAL        	   0x0B
 #define INFO_FIX_SIM		       0x0C
 #define INFO_FIX_OTHER		       0x0D
-
+#define INFO_DEVICE_STARTING       0x10
 
 #define RTCM_TX_FREQ 868100000 
 #define GU_TX_FREQ   868200000

@@ -38,12 +38,6 @@
     <ClInclude Include="src\Airborne.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\EventDetection.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="src\GUTX.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="GU.h">
       <Filter>Header Files</Filter>
     </ClInclude>

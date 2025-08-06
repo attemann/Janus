@@ -1,7 +1,7 @@
 // Airborne.cpp
 
 #include <sys/_stdint.h>
-#include <Const.h>
+//#include <Const.h>
 #include "Airborne.h"
 #include <math.h>
 #include "GUTX.h"  // Assumes GU_sendEvent(uint8_t event) is declared here
@@ -50,9 +50,9 @@ void AirborneDetector::update(float north, float east) {
 
   if (!airborne && dist > thresholdAirborne) {
     airborne = true;
-    txEvent(EventCode::EVT_AIRBORNE,0);
+    //txEvent(EventCode::EVT_AIRBORNE,0);
   } else if (airborne && dist < thresholdLanded) {
     airborne = false;
-    txEvent(EventCode::EVT_LANDED,0);
+    //txEvent(EventCode::EVT_LANDED,0);
   }
 }

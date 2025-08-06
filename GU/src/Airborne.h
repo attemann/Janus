@@ -1,8 +1,6 @@
 //Airborne.h
 #pragma once
 
-#ifndef AIRBORNE_DETECTOR_H
-#define AIRBORNE_DETECTOR_H
 
     #include <Arduino.h>
     #include <RTKF3F.h>
@@ -30,5 +28,3 @@
         unsigned long lastSampleTime;
         unsigned long sampleInterval;
     };
-
-#endif
