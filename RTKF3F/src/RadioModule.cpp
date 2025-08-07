@@ -29,6 +29,11 @@ bool RadioModule::init(RadioModule::HWPins pins, int nodeid, int networkid, int 
     _radio.encrypt(NULL);
     _radio.setFrequency(frequency);
 
+    Serial.printf("Bitrate was=%d\r\n",getBitrate());
+    //setBitrate(125000);
+    //Serial.printf("Bitrate now=%d\r\n", getBitrate());
+
+
     //setBitrate(_radio, 19200);  // Setter bitrate til 19200 bps
     //Serial.printf("Radio bitrate: %u bps\n", _radio.getPower());
     //Serial.printf("Radio bitrate: %u bps\n", _radio.getBitrate());
@@ -38,10 +43,19 @@ bool RadioModule::init(RadioModule::HWPins pins, int nodeid, int networkid, int 
     return true;
 }
 
-void RadioModule::setBitrate(RFM69& radio, uint16_t bitrate) {
+void RadioModule::setBitrate(uint16_t bitrate) {
     uint16_t val = 32000000UL / bitrate;
-    radio.writeReg(REG_BITRATEMSB, val >> 8);
-    radio.writeReg(REG_BITRATELSB, val & 0xFF);
+    _radio.writeReg(REG_BITRATEMSB, val >> 8);
+    _radio.writeReg(REG_BITRATELSB, val & 0xFF);
+}
+
+uint16_t RadioModule::getBitrate() {
+    uint8_t msb = _radio.readReg(REG_BITRATEMSB);
+    uint8_t lsb = _radio.readReg(REG_BITRATELSB);
+    uint16_t regVal = (msb << 8) | lsb;
+
+    if (regVal == 0) return 0;  // Avoid division by zero
+    return 32000000UL / regVal;  // F_XOSC = 32 MHz
 }
 
 bool RadioModule::verify() {
@@ -95,7 +109,9 @@ void RadioModule::sendMessageCode(int destNode, int destFreq, int returnFreq, in
     packet[0] = msgType;  // tag
     packet[1] = msgCode;
 
+	Serial.println("Before sendWithReturnFreq");
     sendWithReturnFreq(destNode, destFreq, returnFreq, packet, sizeof(packet));
+    Serial.println("After sendWithReturnFreq");
 }
 
 

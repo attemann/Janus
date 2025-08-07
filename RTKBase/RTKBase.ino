@@ -108,17 +108,17 @@ void setup() {
     screen.setLine(1, "");
 
     // Radio
-    if (!radioMod.init(radioPins, NODEID_RTKBASE, NETWORK_ID, RTCM_TX_FREQ)) {
-		radioMod.sendMessageCode(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, MSG_ERROR, ERROR_RADIO_INIT);   
+    if (!radioMod.init(radioPins, NODEID_RTKBASE, NETWORK_ID, FREQUENCY_RTCM)) {
+		radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_ERROR, ERROR_RADIO_INIT);   
         haltUnit("Radio init", "Failure, freeze");
     } else Serial.println("Radio init ok");
 
     if (!radioMod.verify()) {
-        radioMod.sendMessageCode(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, MSG_ERROR, ERROR_RADIO_VERIFY);
+        radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_ERROR, ERROR_RADIO_VERIFY);
         haltUnit("Radio verify", "Failure, freeze");
     } else Serial.println("Radio verified");
 
-    radioMod.sendMessageCode(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, MSG_INFORMATION, INFO_DEVICE_STARTING);
+    radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, INFO_DEVICE_STARTING);
 
     //screen.setLine(0, "Testing RTCM...");
     //screen.setLine(1, "");
@@ -132,7 +132,7 @@ void setup() {
 
     if (gnss.detectUARTPort() == 0) {
         delay(1000);
-        radioMod.sendMessageCode(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, MSG_ERROR, ERROR_UART);
+        radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_ERROR, ERROR_UART);
         haltUnit("Gnss port", "Failure, freeze");
 	} else Serial.println("Gnss port ok");
 
@@ -150,7 +150,7 @@ void loop() {
         gnss.sendCommand("saveconfig\r\n");
 
         deviceState = DEVICESTATE::DEVICE_GETTINGFIX;
-		radioMod.sendMessageCode(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, MSG_INFORMATION, INFO_TRANSITION_GETTINGFIX);
+		radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, INFO_TRANSITION_GETTINGFIX);
         delay(1000);
         //while (1);
         break;
@@ -173,7 +173,7 @@ void loop() {
             screen.setLine(1, "SIV: " + String(fix.SIV));
 
             if (millis() - timeLastSpeak > DELAYBETWEENSPEAK) {
-				radioMod.sendMessageCode(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, MSG_SIV, fix.SIV);
+				radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_SIV, fix.SIV);
                 timeLastSpeak = millis();
 			}
 
@@ -182,37 +182,38 @@ void loop() {
             gnss.showFix(fix);
 
             if (fix.fixType == 1 || fix.fixType==7) {
+                radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, INFO_TRANSITION_SURVEYING);
+                delay(1000);
                 timeSurveyStart = millis();
 				gnss.sendCommand("unlog\r\n");
-                gnss.sendCommand("mode base time " + String(SURVEYINTIME) + " com2\r\n");
+                gnss.sendCommand("mode base time " + String(SURVEYINTIME/1000, 0) + " com2\r\n");
                 gnss.sendCommand("saveconfig\r\n");
 
+				timeSurveyStart = millis();
                 deviceState = DEVICESTATE::DEVICE_SURVEYING;
-				radioMod.sendMessageCode(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, MSG_INFORMATION, INFO_TRANSITION_SURVEYING);
             }
         }
         break;
     }
     case DEVICESTATE::DEVICE_SURVEYING: {
         unsigned long elapsed = millis() - timeSurveyStart;
-        if (elapsed < (SURVEYINTIME + 1) * 1000) {
-            float err = 99.99;
-            screen.setLine(0, "HDOP " + String(err, 2) + "m");
-            screen.setLine(1, "Time left: " + String(((SURVEYINTIME * 1000) - elapsed) / 1000) + "s");
-            break;
+        if (elapsed < SURVEYINTIME) {
+            screen.setLine(0, "Survey-in");
+            screen.setLine(1, "Time left: " + String((SURVEYINTIME - elapsed)/1000,0) + "s");
+        } else {
+            screen.setLine(0, "Configuring GPS");
+            screen.setLine(1, "Base parameters");
+            Serial.println("BASE_SURVEYING: Survey complete. Enabling RTCM...");
+            gnss.sendCommand("unlog\r\n");
+            gnss.rtcmHandler.sendAllConfig();
+            gnss.sendCommand("config signalgroup 2\r\n");
+            gnss.sendCommand("config pvtalg multi\r\n");
+            gnss.sendCommand("saveconfig\r\n");
+            gnss.rtcmHandler.printList(true);
+            Serial.println("BASE_SURVEYING: RTCM config done, entering OPERATING mode.");
+            deviceState = DEVICESTATE::DEVICE_OPERATING;
+            radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, INFO_TRANSITION_OPERATING);
         }
-        Serial.println("BASE_SURVEYING: Survey complete. Enabling RTCM...");
-
-        gnss.sendCommand("unlog\r\n"); 
-
-        gnss.rtcmHandler.sendAllConfig();
-        gnss.rtcmHandler.printList(true);
-
-        gnss.sendCommand("saveconfig\r\n");
-        Serial.println("BASE_SURVEYING: RTCM config done, entering OPERATING mode.");
-
-        deviceState = DEVICESTATE::DEVICE_OPERATING;
-		radioMod.sendMessageCode(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, MSG_INFORMATION, INFO_TRANSITION_OPERATING);
         break;
     }
     case DEVICESTATE::DEVICE_OPERATING: {
@@ -225,13 +226,17 @@ void loop() {
 				uint16_t type = gnss.getRTCMType(rtcmBuf, len);
 				bool isValid = gnss.isValidRTCM(rtcmBuf, len);
 				bool isFragmented = len > RadioModule::RTCM_Fragmenter::MAX_PAYLOAD;
-				Serial.printf("Sending [RTCM %d] %s %s\r\n",
+
+				uint16_t count = gnss.rtcmHandler.messages[gnss.rtcmHandler.findById(type)].txCount;
+				Serial.printf("Sending [" ANSI_RED "RTCM%d" ANSI_RESET "] %s %s" ANSI_GREEN " Count: %d" ANSI_RESET "\r\n",
                     type,
                     isValid ? "Valid" : "Invalid",
-                    isFragmented ? "Fragments" : "Single");
+                    isFragmented ? "Fragments" : "Single",
+                    count);
+
+                gnss.rtcmHandler.incrementSentCount(type);
 
                 radioMod.sendRTCM(rtcmBuf, len);
-				gnss.rtcmHandler.incrementSentCount(type);
             }
         }
         updateRTCMTypeCountDisplay();
@@ -244,22 +249,22 @@ void loop() {
     if (fix.fixType != oldFixType) {
 		switch (fix.fixType) {
             case 0: // No fix
-                radioMod.sendMessageCode(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, MSG_INFORMATION, INFO_FIX_NOFIX);
+                radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, INFO_FIX_NOFIX);
 			    break;
             case 1: // GPS fix
-				radioMod.sendMessageCode(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, MSG_INFORMATION, INFO_FIX_GPS);
+				radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, INFO_FIX_GPS);
                 break;
 			case 2: // DGPS fix     
-                radioMod.sendMessageCode(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, MSG_INFORMATION, INFO_FIX_DGPS);
+                radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, INFO_FIX_DGPS);
 				break;
             case 3: // RTK float
-                radioMod.sendMessageCode(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, MSG_INFORMATION, INFO_FIX_RTK_FLOAT);
+                radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, INFO_FIX_RTK_FLOAT);
                 break;
             case 4: // RTK fixed
-                radioMod.sendMessageCode(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, MSG_INFORMATION, INFO_FIX_RTK_FIX);
+                radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, INFO_FIX_RTK_FIX);
                 break;
             default: // Other fix types
-                radioMod.sendMessageCode(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, MSG_INFORMATION, INFO_FIX_OTHER);
+                radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, INFO_FIX_OTHER);
                 break;
         }
 		oldFixType = fix.fixType;

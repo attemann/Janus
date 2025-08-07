@@ -110,29 +110,45 @@ String GNSSModule::fixTypeToString(int fixType) {
 }
 
 bool GNSSModule::readRTCMfromGPS(uint8_t* buffer, size_t& len) {
-    while (_serial.available()) {
-        if (_serial.read() != MSG_RTCM) continue;
+    const unsigned long timeout = 100;  // milliseconds
+    unsigned long startTime;
 
-        while (_serial.available() < 2);
+    while (_serial.available()) {
+        // Look for 0xD3 sync byte
+        if (_serial.read() != 0xD3) continue;
+
+        // Wait for length bytes
+        startTime = millis();
+        while (_serial.available() < 2) {
+            if (millis() - startTime > timeout) return false;
+        }
         uint8_t lenH = _serial.read();
         uint8_t lenL = _serial.read();
-        uint16_t payloadLen = ((lenH & MSG_RTCM) << 8) | lenL;
+        uint16_t payloadLen = ((lenH & 0x03) << 8) | lenL;
 
+        // Reject oversized messages
         if (payloadLen > 1023) return false;
 
-        size_t totalLen = 3 + payloadLen + 3;
-        while (_serial.available() < payloadLen + 3);
+        size_t totalLen = 3 + payloadLen + 3;  // header + payload + CRC
 
-        buffer[0] = MSG_RTCM;
+        // Wait for full message
+        startTime = millis();
+        while (_serial.available() < payloadLen + 3) {
+            if (millis() - startTime > timeout) return false;
+        }
+
+        // Fill buffer
+        buffer[0] = 0xD3;
         buffer[1] = lenH;
         buffer[2] = lenL;
-        for (int i = 0; i < payloadLen + 3; i++) {
+        for (size_t i = 0; i < payloadLen + 3; i++) {
             buffer[3 + i] = _serial.read();
         }
 
         len = totalLen;
         return isValidRTCM(buffer, len);
     }
+
     return false;
 }
 
@@ -548,5 +564,5 @@ void GNSSModule::RTCMHandler::getNextRTCMCount(uint16_t* rtcmId, uint32_t* txCou
 void GNSSModule::RTCMHandler::incrementSentCount(uint16_t type) {
     int idx = findById(type);
     if (idx >= 0) messages[idx].txCount++;
-    Serial.printf("messages[idx].txCount = %d\r\n", messages[idx].txCount);
+    //Serial.printf("messages[idx].txCount = %d\r\n", messages[idx].txCount);
 }

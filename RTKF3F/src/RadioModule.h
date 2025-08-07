@@ -30,6 +30,8 @@ public:
     void sendWithReturnFreq(uint8_t destNode, int destFreq, int returnFreq, const uint8_t* msg, uint8_t len);
 	int getSenderId();
 	int getTargetId();	
+	void setBitrate(uint16_t bitrate);
+    uint16_t getBitrate();
 
     // Nested RTCM Fragmenter class
     class RTCM_Fragmenter {

@@ -17,7 +17,7 @@ void txEvent(EventCode code, uint8_t status_flags) {
     encodeEventMessage(msg, NODEID_GU,
         static_cast<uint8_t>(code),  // cast added
         status_flags);
-    radioMod.sendWithReturnFreq(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, msg, sizeof(msg));
+    radioMod.sendWithReturnFreq(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, msg, sizeof(msg));
 }
 
 void txRelPos(GNSSModule::GNSSFix fix, bool isRelativeToBase) {
@@ -39,12 +39,12 @@ void txRelPos(GNSSModule::GNSSFix fix, bool isRelativeToBase) {
   int16_t d_dm = d / 10;
 
   //encodeRelPosMessage(msg, slope.getGliderId(), n_dm, e_dm, d_dm, fixStatus(fix));
-  radioMod.sendWithReturnFreq(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, msg, sizeof(msg));
+  radioMod.sendWithReturnFreq(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, msg, sizeof(msg));
 */
 }
 
 void txMsg(uint8_t msgCode, uint8_t d) {
   //uint8_t msg[6];
   //encodeMiscMessage(msg, slope.getGliderId(), d);
-  //radioMod.sendWithReturnFreq(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, msg, sizeof(msg));
+  //radioMod.sendWithReturnFreq(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, msg, sizeof(msg));
 }

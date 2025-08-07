@@ -58,7 +58,7 @@ void setup() {
 
 
     // Radio
-    if (!radioMod.init(radioPins, NODEID_CD, NETWORK_ID, GU_TX_FREQ)) {
+    if (!radioMod.init(radioPins, NODEID_CD, NETWORK_ID, FREQUENCY_CD)) {
         speaker.playWavFile(MY_WAV_FILE);
         speaker.playWavFile("/radio.wav");
 		speaker.speakError(ERROR_RADIO_INIT);

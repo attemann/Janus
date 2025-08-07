@@ -25,7 +25,7 @@ enum EventCode : uint8_t {
 
 #define MAX_GU_UNITS 5
 #define SLOPELENGTH 100
-#define SURVEYINTIME 10
+#define SURVEYINTIME 10000
 
 // Const for airborne detection
 #define DETECTOR_BUFFER_SIZE 30  // 3 secs with 0.1s interval
@@ -78,8 +78,8 @@ enum EventCode : uint8_t {
 #define INFO_FIX_OTHER		       0x0D
 #define INFO_DEVICE_STARTING       0x10
 
-#define RTCM_TX_FREQ 868100000 
-#define GU_TX_FREQ   868200000
+#define FREQUENCY_RTCM 868100000 
+#define FREQUENCY_CD   868200000
 
 #define NODEID_RTKBASE   1
 #define NODEID_CD		 2

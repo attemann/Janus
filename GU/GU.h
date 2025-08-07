@@ -12,7 +12,6 @@ void showMenu() {
     Serial.println("  ?       - Show help");
     Serial.println("  g       - Enable gngga output");
     Serial.println("  f       - Enable fix output");
-    Serial.println("  r       - Log RTCM messages");
     Serial.println("  reset   - Reset the ESP32");
     Serial.println("  any other command");
 	Serial.println("Type your command and press Enter:");
@@ -23,9 +22,6 @@ void handleConsoleCommand(String cmd) {
 
     if (cmd == "f") {
 		showFix = !showFix;  // Toggle fix output
-    }
-    else if (cmd == "r") {
-        showRTCM = !showRTCM;  // Toggle RTCM output
     }
     else if (cmd == "g") {
         showGngga = !showGngga;  // Toggle RTCM output
@@ -58,7 +54,6 @@ void readConsole() {
             inputLine += ch;
         }
 
-        // Sikkerhetsbuffer
         if (inputLine.length() > 80) inputLine = "";
     }
 }

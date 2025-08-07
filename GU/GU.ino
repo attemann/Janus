@@ -76,19 +76,21 @@ void setup() {
     Serial.printf("%s starting\r\n", APPNAME);
  
     // Radio
-    if (!radioMod.init(radioPins, NODEID_GU, NETWORK_ID, GU_TX_FREQ)) {
-        radioMod.sendMessageCode(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, MSG_ERROR, ERROR_RADIO_INIT);
+    if (!radioMod.init(radioPins, NODEID_GU, NETWORK_ID, FREQUENCY_CD)) {
+        radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_ERROR, ERROR_RADIO_INIT);
         haltUnit("Radio init", "Failure, freeze");
     }
     else Serial.println("Radio init ok");
 
     if (!radioMod.verify()) {
-        radioMod.sendMessageCode(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, MSG_ERROR, ERROR_RADIO_VERIFY);
+        radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_ERROR, ERROR_RADIO_VERIFY);
         haltUnit("Radio verify", "Failure, freeze");
     }
     else Serial.println("Radio verified");
 
-    radioMod.sendMessageCode(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, MSG_INFORMATION, INFO_DEVICE_STARTING);
+	Serial.println("Before sendmessage");
+    //radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, INFO_DEVICE_STARTING);
+    Serial.println("after sendmessage");
 
     // GNSS
     gnss.begin(GNSS_BAUD, UART_RX, UART_TX);
@@ -96,7 +98,7 @@ void setup() {
 
     if (gnss.detectUARTPort() == 0) {
         haltUnit("Gnss port", "Failure, freeze");
-        radioMod.sendMessageCode(0, GU_TX_FREQ, RTCM_TX_FREQ, MSG_ERROR, ERROR_COM);
+        radioMod.sendMessageCode(0, FREQUENCY_CD, FREQUENCY_RTCM, MSG_ERROR, ERROR_COM);
     }
     else Serial.println("Gnss port ok");
 
