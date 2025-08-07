@@ -93,7 +93,7 @@ void RadioModule::sendMessageCode(int destNode, int destFreq, int returnFreq, in
 
 void RadioModule::sendRTCMNumMessages() {
     uint8_t packet[5];
-    packet[0] = MSG_RTCM_NUMSENT;  // tag
+    packet[0] = MSG_RTCM_NUM_SENT;  // tag
 
     // Store numSent as big endian (network order)
     packet[1] = (_numRTCMSent >> 24) & 0xFF;
@@ -219,7 +219,7 @@ void RadioModule::RTCM_Fragmenter::sendFragmented(RFM69& radio, uint8_t destId, 
         size_t offset = i * MAX_PAYLOAD;  
         size_t chunkLen = min((size_t)MAX_PAYLOAD, len - offset);  
 
-        packet[0] = MSG_RTCMFRAGMENT;  
+        packet[0] = MSG_RTCM_FRAGMENT;  
         packet[1] = i;              // fragment index  s
         packet[2] = totalChunks;    // total fragments  
 
@@ -241,7 +241,7 @@ RadioModule::RTCM_Reassembler::RTCM_Reassembler()
 }
 
 void RadioModule::RTCM_Reassembler::acceptFragment(const uint8_t* data, size_t len) {
-    if (len < 4 || data[0] != MSG_RTCMFRAGMENT) return;
+    if (len < 4 || data[0] != MSG_RTCM_FRAGMENT) return;
 
     uint8_t index = data[1];
     uint8_t total = data[2];

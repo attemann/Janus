@@ -1,11 +1,27 @@
-﻿#pragma once
+﻿//RTKF3F.h
 
-//RTKF3F.h
+#pragma once
 
 #include "GNSSModule.h"
 #include "RadioModule.h"
 
-#include "Slope.h"
+// === Event codes (Bits 7–4 of Byte 1) ===
+// Events sent from Glider Unit (GU) to Base Station (BS)
+enum EventCode : uint8_t {
+    EVT_NONE = 0x0,  // Reserved / no event
+    EVT_CROSS_A_IN = 0x1,  // Cross A base into task
+    EVT_CROSS_A_OUT = 0x2,  // Cross A base out of task
+    EVT_CROSS_B_IN = 0x3,  // Cross B base into task
+    EVT_CROSS_B_OUT = 0x4,  // Cross B base out of task
+    EVT_SAFETY_IN_TO = 0x5,  // Cross into safety area (danger zone)
+    EVT_SAFETY_OUT_OF = 0x6,  // Cross out of safety area (safe zone)
+    EVT_AIRBORNE = 0x7,  // Glider airborne (takeoff)
+    EVT_LANDED = 0x8,  // Glider landed
+    EVT_ACK = 0x9,  // Acknowledgment of flight settings
+};
+
+#include "Arena.h"
+#include "Glider.h"
 
 #define MAX_GU_UNITS 5
 #define SLOPELENGTH 100
@@ -16,33 +32,34 @@
 #define THRESHOLD_AIRBORNE 9.0f  // 3 m/s avg over 3 secs
 #define THRESHOLD_LANDED 1.0f    // 1 m/s avg over 3 secs
 
-// Message codes
-#define	MSG_RTCM             0xD3
-#define	MSG_RTCMFRAGMENT     0x0A
-#define	MSG_RTCM_NUMSENT     0x0B
+// Message codes (all unique, hex format)
+#define MSG_RTCM                0xD3  // Standard RTCM message
+#define MSG_RTCM_FRAGMENT       0x0A  // Fragmented RTCM
+#define MSG_RTCM_NUM_SENT       0x0B  // Number of RTCM sent
 
-#define	MSG_FLIGHT_SETTINGS  0xA0
-#define	MSG_REQ_POS          0xA1
-#define	MSG_GU_GPSSETTINGS   0xA2
+#define MSG_ARENA_SETTINGS      0xA0
+#define MSG_GLIDER_SETTINGS     0xA1
+#define MSG_REQ_POS             0xA2  
+#define MSG_GU_GPS_SETTINGS     0xA3  
 
-#define MSG_INFORMATION      0xF0
-#define MSG_ERROR		     0xF1
-#define MSG_SIV			     0xF2
+#define MSG_INFORMATION         0xF0
+#define MSG_ERROR               0xF1
+#define MSG_SIV                 0xF2
 
-#define MSG_TYPE_G2B_EVENT   0xB1
-#define MSG_TYPE_G2B_RELPOS  0xB2
-#define MSG_TYPE_G2B_MISC    0xB3
+#define MSG_TYPE_G2B_EVENT      0xB1
+#define MSG_TYPE_G2B_RELPOS     0xB2
+#define MSG_TYPE_G2B_MISC       0xB3
 
 // Radio errors
-#define ERROR_RADIO_INIT     0
-#define ERROR_RADIO_VERIFY   1
+#define ERROR_RADIO_INIT        0x00
+#define ERROR_RADIO_VERIFY      0x01
 
 // GNSS errors
-#define ERROR_UART           10
-#define ERROR_COM            11
+#define ERROR_UART              0x10
+#define ERROR_COM               0x11
 
 // Unknown error code
-#define ERROR_UNKNOWN        99 
+#define ERROR_UNKNOWN           0x63  // 99 decimal = 0x63
 
 // INFORMATION MESSGAGE CODES
 // BASE TRANSITION CODES
@@ -78,7 +95,6 @@
 
 enum class F3FTaskState {
 	TASK_UNKNOWN,
-	//  TASK_INSIDE_A,
 	TASK_OUTSIDE_A,
 	TASK_STARTED,
 	TASK_TURN1,
@@ -93,41 +109,13 @@ enum class F3FTaskState {
 	TASK_FINISHED
 };
 
-// === Event codes (Bits 7–4 of Byte 1) ===
-// Events sent from Glider Unit (GU) to Base Station (BS)
-enum class EventCode : uint8_t {
-	EVT_NONE = 0x0,  // Reserved / no event
-	EVT_CROSS_A_IN = 0x1,  // Cross A base into task
-	EVT_CROSS_A_OUT = 0x2,  // Cross A base out of task
-	EVT_CROSS_B_IN = 0x3,  // Cross B base into task
-	EVT_CROSS_B_OUT = 0x4,  // Cross B base out of task
-	EVT_SAFETY_IN_TO = 0x5,  // Cross into safety area (danger zone)
-	EVT_SAFETY_OUT_OF = 0x6,  // Cross out of safety area (safe zone)
-	EVT_AIRBORNE = 0x7,  // Glider airborne (takeoff)
-	EVT_LANDED = 0x8,  // Glider landed
-	EVT_ACK = 0x9,  // Acknowledgment of flight settings
-};
 
-// === Status bit flags (Bits 3–0 of Byte 1 + bit 4 in Byte 2) ===
-//constexpr uint8_t STATUS_LINK_OK = 0x01;  // Or define separately if needed
-//constexpr uint8_t STATUS_RTK_FLOAT = 0x02;
-//constexpr uint8_t STATUS_RTK_FIX = 0x04;
-//constexpr uint8_t STATUS_GPS_FIX = 0x08;
-//constexpr uint8_t STATUS_DGNSS_USED = 0x10;
 
-// === Packet format for messages from GU to BS ===
-// Byte 0: GLIDER_ID       (uint8_t, 0–255)
-// Byte 1: EVENT_STATUS    ((event << 4) | (status & 0x0F))
-// Byte 2: STATUS_DGNSS_USED (bit 4) + TIMESTAMP[23:17] (7 bits)
-// Byte 3: TIMESTAMP[16:9]
-// Byte 4: TIMESTAMP[8:0]
 
-// === Packet format for ACK message from GU to BS ===
-// Byte 0: GLIDER_ID
-// Byte 1: EVENT_STATUS (EVENT = EVT_ACK, status as needed)
-// Byte 2: ACK_CODE (e.g., 0x00 = OK)
-// Byte 3: RESERVED = 0x00
-// Byte 4: RESERVED = 0x00
+// Define ANSI color codes (disable if not supported)
+#define ANSI_GREEN  "\x1b[32m"
+#define ANSI_RED    "\x1b[31m"
+#define ANSI_RESET  "\x1b[0m"
 
 // === ACK codes ===
 enum class AckCode : uint8_t {

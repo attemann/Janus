@@ -12,32 +12,7 @@ static float slope_dx, slope_dy;
 static float slope_nx, slope_ny;
 //static bool initialized = false;
 
-void initEventDetection() {
-  float slopeDeg = slope.getSlopeAngle();
-  float rad = radians(90.0f - slopeDeg);  // 0° = north, increasing clockwise
-
-  // Unit vector in slope direction
-  slope_dx = cos(rad);
-  slope_dy = sin(rad);
-
-  // Normal vector (perpendicular to slope)
-  slope_nx = -slope_dy;
-  slope_ny =  slope_dx;
-
-  // Flip direction if A base is on the left
-  if (!slope.getABaseLeft()) {
-    slope_nx *= -1;
-    slope_ny *= -1;
-  }
-
-  // Place A and B bases relative to pilot location (0,0)
-  A_x = slope_nx * -(SLOPELENGTH / 2);
-  A_y = slope_ny * -(SLOPELENGTH / 2);
-  B_x = slope_nx *  (SLOPELENGTH / 2);
-  B_y = slope_ny *  (SLOPELENGTH / 2);
-}
-
-bool checkForCrossingEvent(const GNSSModule::GNSSFix& fix, EventCode& event) {
+bool checkCrossing(const GNSSModule::GNSSFix& fix, EventCode& event) {
   static bool wasBetweenBases = false;
 
   float px = fix.adjEast;

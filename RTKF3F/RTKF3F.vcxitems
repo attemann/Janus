@@ -17,17 +17,19 @@
   <ItemGroup>
     <Text Include="$(MSBuildThisFileDirectory)readme.txt" />
     <Text Include="$(MSBuildThisFileDirectory)library.properties" />
-    <Text Include="$(MSBuildThisFileDirectory)src\RTKF3F.h" />
   </ItemGroup>
   <ItemGroup>
     <!-- <ClInclude Include="$(MSBuildThisFileDirectory)RTKF3F.h" /> -->
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\Arena.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\Glider.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\GNSSModule.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\RadioModule.cpp" />
-    <ClCompile Include="$(MSBuildThisFileDirectory)src\Slope.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\Arena.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\Glider.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\GNSSModule.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\RadioModule.h" />
-    <ClInclude Include="$(MSBuildThisFileDirectory)src\Slope.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\RTKF3F.h" />
   </ItemGroup>
 </Project>

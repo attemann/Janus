@@ -24,9 +24,6 @@
     <ClCompile Include="src\Airborne.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\EventDetection.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="src\GUTX.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

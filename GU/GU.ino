@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <RFM69.h>
 #include <RTKF3F.h>
+
 #include "GU.h"
 
 
@@ -20,10 +21,11 @@
 
 const char* getMessageName(uint8_t id) {
     switch (id) {
-    case MSG_RTCM_NUMSENT:     return "RTCM_NUMSENT";
+    case MSG_RTCM_NUM_SENT:    return "RTCM_NUMSENT";
     case MSG_RTCM:             return "RTCM";
-    case MSG_RTCMFRAGMENT:     return "RTCMFRAGMENT";
-    case MSG_FLIGHT_SETTINGS:  return "FLIGHT_SETTINGS";
+    case MSG_RTCM_FRAGMENT:    return "RTCMFRAGMENT";
+    case MSG_ARENA_SETTINGS:   return "FLIGHT_SETTINGS";
+	case MSG_GLIDER_SETTINGS:  return "GLIDER_SETTINGS";
     case MSG_REQ_POS:          return "REQ_POS";
     default:                   return "UNKNOWN";
     }
@@ -55,14 +57,15 @@ HardwareSerial SerialGNSS(2);
 GNSSModule gnss(SerialGNSS);
 GNSSModule::GNSSFix fix;
 
+Arena arena;
+Glider glider;
+
 void haltUnit(String msg1, String msg2) {
     Serial.print(msg1);
     Serial.print(":");
     Serial.println(msg2);
     while (true);
 }
-
-Slope slope;
 
 int insertedRTCM = 0; // Counter for inserted RTCM messages 
 
@@ -122,7 +125,7 @@ void loop() {
    if (radioMod.receive(data, len)) {
        if (len > 0) {
            switch (data[0]) {
-           case MSG_RTCM_NUMSENT:   // Traffic summary message
+           case MSG_RTCM_NUM_SENT:   // Traffic summary message
 			   Serial.println("GU:MSG_RTCM_NUMSENT:Received RTCM traffic summary");
                if (len == 5) {
                    uint32_t numSent = (data[1] << 24) | (data[2] << 16) | (data[3] << 8) | data[4];
@@ -142,8 +145,8 @@ void loop() {
                else Serial.println("GU:Invalid full RTCM message");
                break;
 
-           case MSG_RTCMFRAGMENT:   // Fragmented RTCM
-			   Serial.println("GU:MSG_RTCMFRAGMENT:Received RTCM fragment");
+           case MSG_RTCM_FRAGMENT:   // Fragmented RTCM
+			   Serial.println("GU:MSG_RTCM_FRAGMENT:Received RTCM fragment");
                reassembler.acceptFragment(data, len);
                if (data[1] == 0) { // First fragment
                    Serial.println("---");
@@ -151,36 +154,22 @@ void loop() {
 
 			   radioMod.printRTCMSegment(data, len);
                if (reassembler.isComplete()) {
-				   Serial.printf("GU:RTCM fragment complete, %u fragments received\n", reassembler.getReceivedCount());
+				   Serial.printf("GU:MSG_RTCM_FRAGMENT complete, %u fragments received\n", reassembler.getReceivedCount());
                    const uint8_t* rtcm = reassembler.getData();
                    size_t rtcmLen = reassembler.getLength();
 
                    if (gnss.isValidRTCM(rtcm, rtcmLen)) {
-					   Serial.println("GU:Valid RTCM fragment received");
+					   Serial.println("GU:MSG_RTCM_FRAGMENT received");
                        SerialGNSS.write(rtcm, rtcmLen);
 				   }
-				   else Serial.println("GU:Invalid RTCM fragment received");
+				   else Serial.println("GU:MSG_RTCM_FRAGMENT Invalid fragment received");
                    reassembler.reset();
                }
                break;
 
-           case MSG_FLIGHT_SETTINGS:
-               Serial.println("GU:MSG_FLIGHT_SETTINGS: Received Flight settings");
-               if (len >= 9) {
-                   uint16_t angle10 = data[1] | (data[2] << 8);
-                   bool aBaseLeft = data[3];
-                   uint8_t gliderId = data[4];
-
-                   int16_t offsetN_cm = data[5] | (data[6] << 8);
-                   int16_t offsetE_cm = data[7] | (data[8] << 8);
-
-                   slope.setGliderId(gliderId);
-                   slope.setSlopeAngle(angle10 / 10.0f);
-                   slope.setABaseLeft(aBaseLeft);
-                   slope.setPilotOffsetNED(offsetN_cm / 100.0f, offsetE_cm / 100.0f, 0);
-
-                   //initEventDetection();
-               }
+           case MSG_ARENA_SETTINGS:
+               Serial.println("GU:MSG_ARENA_SETTINGS: Received Arena settings");
+			   arena.decodeArenaSettings(data);
                break;
            case MSG_REQ_POS:
                // send relative pos to base (true), not pilot (false)

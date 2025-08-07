@@ -6,7 +6,6 @@
 
 #include "RTKF3F.h"
 #include "LCD.h"
-#include "RTKBase.h"
 
 #define APPNAME "RTKBase 1.0"
 
@@ -70,6 +69,30 @@ void haltUnit(String msg1, String msg2) {
     while (true);
 }
 
+// Called from loop() when state == Operating
+void updateRTCMTypeCountDisplay() {
+    static unsigned long lastSwitchTime = 0;
+    static uint16_t currentRTCMId = 0;
+    static uint32_t currentRTCMCount = 0;
+    static bool initialized = false;
+
+    // Only update every 5 seconds (5000 ms)
+    if (!initialized || millis() - lastSwitchTime >= 5000) {
+        // Get next enabled RTCM type and count
+        gnss.rtcmHandler.getNextRTCMCount(&currentRTCMId, &currentRTCMCount);
+
+        // Update LCD or display
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.printf("RTCM %u", currentRTCMId);
+        lcd.setCursor(0, 1);
+        lcd.printf("Sent: %lu", currentRTCMCount);
+
+        lastSwitchTime = millis();
+        initialized = true;
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     while (!Serial);
@@ -106,21 +129,14 @@ void setup() {
 
     if (gnss.detectUARTPort() == 0) {
         delay(1000);
-        //radioMod.sendMessageCode(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, MSG_INFORMATION, INFO_DEVICE_STARTING);
         radioMod.sendMessageCode(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, MSG_ERROR, ERROR_UART);
-        //delay(1000);
         haltUnit("Gnss port", "Failure, freeze");
 	} else Serial.println("Gnss port ok");
-
-    gnss.setDefaultRTCMs();
-    gnss.printRTCMConfig();
 
     deviceState = DEVICESTATE::DEVICE_STARTING;
 }
 
 void loop() {
-
-    readConsole();
 
     switch (deviceState) {
     case DEVICESTATE::DEVICE_STARTING: {
@@ -182,10 +198,12 @@ void loop() {
             break;
         }
         Serial.println("BASE_SURVEYING: Survey complete. Enabling RTCM...");
-        gnss.setDefaultRTCMs();
 
         gnss.sendCommand("unlog\r\n"); 
-        gnss.sendConfiguredRTCMs();
+
+        gnss.rtcmHandler.sendAllConfig();
+        gnss.rtcmHandler.printList(true);
+
         gnss.sendCommand("saveconfig\r\n");
         Serial.println("BASE_SURVEYING: RTCM config done, entering OPERATING mode.");
 
@@ -197,18 +215,20 @@ void loop() {
         uint8_t rtcmBuf[1024];
         size_t len = 0;
 
-        screen.setLine(0, "Operating");
-        screen.setLine(1, String(radioMod.getRTCMNumMessages()));
+        //screen.setLine(0, "Operating");
+        //screen.setLine(1, String(radioMod.getRTCMNumMessages()));
 
         if (gnss.readRTCM(rtcmBuf, len)) {
             if (len > 0) {
                 uint16_t type = gnss.getRTCMBits(rtcmBuf, 24, 12);
                 Serial.printf("%4zu bytes RTCM%4u\n", len, type);
                 radioMod.sendRTCM(rtcmBuf, len);
+				gnss.rtcmHandler.messages[gnss.rtcmHandler.findById(type)].txCount++;
                 delay(20);
 				radioMod.sendRTCMNumMessages();  // Send traffic summary message
             }
         }
+        updateRTCMTypeCountDisplay();
         break;
     }
     default:

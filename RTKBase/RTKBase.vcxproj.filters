@@ -26,13 +26,7 @@
     <ClInclude Include="__vm\.RTKBase.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="TwoButtonMenu.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="LCD.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="RTKBase.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

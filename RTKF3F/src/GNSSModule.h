@@ -60,15 +60,49 @@ public:
     void showFix(const GNSSFix& fix);
     bool parseGGA(const char* line, GNSSFix& fix);
     bool isValidRTCM(const uint8_t* data, size_t len);
-    void sendConfiguredRTCMs();  // Sender alle aktiverte meldinger
-    void setDefaultRTCMs();      // Setter default liste
-    void printRTCMConfig();
-    const RTCMMessage& getRTCM(int index) const;
-    int getRTCMCount() const;
-    void toggleRTCM(int index);
-    void setRTCMFrequency(int index, float hz);
-    uint8_t fixStatus(GNSSModule::GNSSFix fix);
 
+    const RTCMMessage& getRTCM(int index) const;
+
+    class RTCMHandler {
+    public:
+        struct Entry {
+            const char* name;
+            uint16_t id;
+            float frequency;
+            bool enabled;
+            const char* description;  // Human-readable description
+            uint32_t txCount = 0;     // Transmit counter (optional)
+        };
+
+        static constexpr size_t MAX_MSGS = 20;
+        Entry messages[MAX_MSGS];
+        size_t count = 0;
+
+        GNSSModule* parent = nullptr;
+
+        RTCMHandler(GNSSModule* gnss);
+
+        void add(const char* name, uint16_t id, float freq, bool enabled, const char* desc);
+
+        void enable(int index, bool value);
+        void setFrequency(int index, float freq);
+
+        void enableById(uint16_t id, bool value);
+        void setFrequencyById(uint16_t id, float freq);
+
+        void sendConfig(int index);
+        void sendAllConfig();
+
+        void printList(bool showOnlyEnabled);
+
+        int findById(uint16_t id) const;
+        int findByName(const char* name) const;
+        void getNextRTCMCount(uint16_t* rtcmId, uint32_t* count);
+    private:
+        size_t _lastStatusIdx = 0; // Index of last shown message
+    };
+
+    RTCMHandler rtcmHandler;
 
 private:
     HardwareSerial& _serial;

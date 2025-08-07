@@ -8,20 +8,20 @@
 #include "GUTX.h"
 
 extern RadioModule radioMod;
-extern Slope slope;
+//extern Slope slope;
 
 
 
 void txEvent(EventCode code, uint8_t status_flags) {
     uint8_t msg[6];
-    encodeEventMessage(msg, slope.getGliderId(),
+    encodeEventMessage(msg, NODEID_GU,
         static_cast<uint8_t>(code),  // cast added
         status_flags);
     radioMod.sendWithReturnFreq(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, msg, sizeof(msg));
 }
 
 void txRelPos(GNSSModule::GNSSFix fix, bool isRelativeToBase) {
-  uint8_t msg[6];
+/*  uint8_t msg[6];
   int n,e,d;
 
   if (isRelativeToBase) {   // relative position to base
@@ -38,12 +38,13 @@ void txRelPos(GNSSModule::GNSSFix fix, bool isRelativeToBase) {
   int16_t e_dm = e / 10;
   int16_t d_dm = d / 10;
 
-  encodeRelPosMessage(msg, slope.getGliderId(), n_dm, e_dm, d_dm, fixStatus(fix));
+  //encodeRelPosMessage(msg, slope.getGliderId(), n_dm, e_dm, d_dm, fixStatus(fix));
   radioMod.sendWithReturnFreq(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, msg, sizeof(msg));
+*/
 }
 
 void txMsg(uint8_t msgCode, uint8_t d) {
-  uint8_t msg[6];
-  encodeMiscMessage(msg, slope.getGliderId(), d);
-  radioMod.sendWithReturnFreq(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, msg, sizeof(msg));
+  //uint8_t msg[6];
+  //encodeMiscMessage(msg, slope.getGliderId(), d);
+  //radioMod.sendWithReturnFreq(NODEID_CD, GU_TX_FREQ, RTCM_TX_FREQ, msg, sizeof(msg));
 }

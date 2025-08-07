@@ -6,63 +6,13 @@
 
 #include "GNSSModule.h"
 
+
 GNSSModule::GNSSModule(HardwareSerial& serial)
-    : _serial(serial), _nmeaIdx(0) {
+    : _serial(serial), _nmeaIdx(0), rtcmHandler(this) {
 }
 
 void GNSSModule::begin(uint32_t baud, int RX, int TX) {
     _serial.begin(baud, SERIAL_8N1, RX, TX);
-}
-
-void GNSSModule::setDefaultRTCMs() {
-    _rtcmCount = 6;
-    _rtcmList[0] = { "rtcm1006", 1.0f, true };
-    _rtcmList[1] = { "rtcm1033", 2.7f, true };
-    _rtcmList[2] = { "rtcm1074", 1.1f, true };
-    _rtcmList[3] = { "rtcm1084", 2.4f, true };
-    _rtcmList[4] = { "rtcm1094", 3.6f, true };
-    _rtcmList[5] = { "rtcm1124", 5.9f, true };
-}
-
-void GNSSModule::printRTCMConfig() {
-    Serial.println("RTCM Configuration:");
-    for (int i = 0; i < _rtcmCount; i++) {
-        const RTCMMessage& msg = _rtcmList[i];
-        Serial.printf("%d. %-10s | %5.2f Hz | %s\n",
-            i+1,
-            msg.name,
-            msg.frequencyHz,
-            msg.enabled ? "ENABLED" : "DISABLED");
-    }
-}
-
-void GNSSModule::sendConfiguredRTCMs() {
-
-    for (int i = 0; i < _rtcmCount; i++) {
-        if (_rtcmList[i].enabled) {
-            String cmd = String(_rtcmList[i].name) + " com2 " + String(_rtcmList[i].frequencyHz, 1) + "\r\n";
-            sendCommand(cmd);
-        }
-    }
-
-}
-
-const GNSSModule::RTCMMessage& GNSSModule::getRTCM(int index) const {
-    return _rtcmList[index];
-}
-
-int GNSSModule::getRTCMCount() const {
-    return _rtcmCount;
-}
-
-void GNSSModule::toggleRTCM(int index) {
-    if (index >= 0 && index < _rtcmCount)
-        _rtcmList[index].enabled = !_rtcmList[index].enabled;
-}
-
-void GNSSModule::setRTCMFrequency(int index, float hz) {
-    if (index >= 0 && index < _rtcmCount)
-        _rtcmList[index].frequencyHz = hz;
 }
 
 int GNSSModule::detectUARTPort() {
@@ -409,4 +359,158 @@ void GNSSModule::showFix(const GNSSFix& fix) {
         //fix.relNorth, fix.relEast, fix.relDown,
         //fix.adjNorth, fix.adjEast, fix.adjDown
     );
+}
+
+GNSSModule::RTCMHandler::RTCMHandler(GNSSModule* gnss) : parent(gnss) {
+    // Example messages, add more as needed
+    add("rtcm1001", 1001, 1.0f, false, "GPS L1 Obs");
+    add("rtcm1002", 1002, 1.0f, false, "GPS L1 Obs (Ext)");
+    add("rtcm1003", 1003, 1.0f, false, "GPS L1/L2 Obs");
+    add("rtcm1004", 1004, 1.0f, false, "GPS L1/L2 Obs (Ext)");
+    add("rtcm1005", 1005, 1.0f, false, "Stat. Ref (no height)");
+    add("rtcm1006", 1006, 1.0f, true, "Stat. Ref (with height)");
+    add("rtcm1007", 1007, 1.0f, false, "Antenna Descriptor");
+    add("rtcm1008", 1008, 1.0f, false, "Ant. Descriptor + SN");
+    add("rtcm1033", 1033, 2.7f, true, "Antenna + Firmware");
+
+    add("rtcm1071", 1071, 1.0f, false, "GPS MSM1");
+    add("rtcm1072", 1072, 1.0f, false, "GPS MSM2");
+    add("rtcm1073", 1073, 1.0f, false, "GPS MSM3");
+    add("rtcm1074", 1074, 1.1f, true,  "GPS MSM4");
+    add("rtcm1075", 1075, 1.0f, false, "GPS MSM5");
+    add("rtcm1076", 1076, 1.0f, false, "GPS MSM6");
+    add("rtcm1077", 1077, 1.0f, false, "GPS MSM7");
+
+    add("rtcm1081", 1081, 1.0f, false, "GLONASS MSM1");
+    add("rtcm1082", 1082, 1.0f, false, "GLONASS MSM2");
+    add("rtcm1083", 1083, 1.0f, false, "GLONASS MSM3");
+    add("rtcm1084", 1084, 2.4f, true,  "GLONASS MSM4");
+    add("rtcm1085", 1085, 1.0f, false, "GLONASS MSM5");
+    add("rtcm1086", 1086, 1.0f, false, "GLONASS MSM6");
+    add("rtcm1087", 1087, 1.0f, false, "GLONASS MSM7");
+
+    add("rtcm1091", 1091, 1.0f, false, "Galileo MSM1");
+    add("rtcm1092", 1092, 1.0f, false, "Galileo MSM2");
+    add("rtcm1093", 1093, 1.0f, false, "Galileo MSM3");
+    add("rtcm1094", 1094, 3.6f, true,  "Galileo MSM4");
+    add("rtcm1095", 1095, 1.0f, false, "Galileo MSM5");
+    add("rtcm1096", 1096, 1.0f, false, "Galileo MSM6");
+    add("rtcm1097", 1097, 1.0f, false, "Galileo MSM7");
+
+    add("rtcm1121", 1121, 1.0f, false, "BeiDou MSM1");
+    add("rtcm1122", 1122, 1.0f, false, "BeiDou MSM2");
+    add("rtcm1123", 1123, 1.0f, false, "BeiDou MSM3");
+    add("rtcm1124", 1124, 5.9f, true,  "BeiDou MSM4");
+    add("rtcm1125", 1125, 1.0f, false, "BeiDou MSM5");
+    add("rtcm1126", 1126, 1.0f, false, "BeiDou MSM6");
+    add("rtcm1127", 1127, 1.0f, false, "BeiDou MSM7");
+
+    add("rtcm1230", 1230, 10.0f, false, "GLONASS L1/L2 Bias");
+
+    add("rtcm4072", 4072, 1.0f, false, "u-blox Proprietary");
+    add("rtcm4073", 4073, 1.0f, false, "u-blox Subtype A");
+    add("rtcm4074", 4074, 1.0f, false, "u-blox Subtype B");
+
+}
+
+void GNSSModule::RTCMHandler::add(const char* name, uint16_t id, float freq, bool enabled, const char* desc) {
+    if (count < MAX_MSGS) {
+        messages[count++] = { name, id, freq, enabled, desc, 0 };
+    }
+}
+
+void GNSSModule::RTCMHandler::enable(int index, bool value) {
+    if (index < 0 || index >= count) return;
+    if (messages[index].enabled == value) return;
+    messages[index].enabled = value;
+    sendConfig(index);
+}
+
+// Enable/disable RTCM by ID
+void GNSSModule::RTCMHandler::enableById(uint16_t id, bool value) {
+    int idx = findById(id);
+    if (idx >= 0) enable(idx, value);
+}
+
+// Set frequency by ID
+void GNSSModule::RTCMHandler::setFrequencyById(uint16_t id, float freq) {
+    int idx = findById(id);
+    if (idx >= 0) setFrequency(idx, freq);
+}
+
+void GNSSModule::RTCMHandler::setFrequency(int index, float freq) {
+    if (index < 0 || index >= count) return;
+    messages[index].frequency = freq;
+    if (messages[index].enabled)
+        sendConfig(index);
+}
+
+void GNSSModule::RTCMHandler::sendConfig(int index) {
+    if (!parent) return;
+    auto& msg = messages[index];
+    String cmd;
+    if (msg.enabled)
+        cmd = String(msg.name) + " com2 " + String(msg.frequency, 1) + "\r\n";
+    else
+        cmd = "unlog " + String(msg.name) + " com2\r\n";
+    parent->sendCommand(cmd);
+    Serial.printf("Sending %s\r\n", cmd);
+	delay(100); // Wait for command to be processed
+}
+
+void GNSSModule::RTCMHandler::sendAllConfig() {
+    for (size_t i = 0; i < count; ++i)
+        sendConfig(i);
+}
+
+void GNSSModule::RTCMHandler::printList(bool showOnlyEnabled) {
+    Serial.println(" #  Name        |  Freq   | State    | Sent   | Description");
+    Serial.println("-------------------------------------------------------------------");
+    for (size_t i = 0; i < count; ++i) {
+        if (showOnlyEnabled && !messages[i].enabled) continue;
+        const char* color = messages[i].enabled ? ANSI_GREEN : ANSI_RED;
+        Serial.printf("%s%2d: %-10s | %5.2f Hz | %-8s | %6lu | %s%s\n",
+            color,
+            (int)(i + 1),
+            messages[i].name,
+            messages[i].frequency,
+            messages[i].enabled ? "ENABLED" : "DISABLED",
+            messages[i].txCount,
+            messages[i].description,
+            ANSI_RESET
+        );
+    }
+}
+
+int GNSSModule::RTCMHandler::findById(uint16_t id) const {
+    for (size_t i = 0; i < count; ++i)
+        if (messages[i].id == id) return i;
+    return -1;
+}
+int GNSSModule::RTCMHandler::findByName(const char* name) const {
+    for (size_t i = 0; i < count; ++i)
+        if (strcmp(messages[i].name, name) == 0) return i;
+    return -1;
+}
+
+void GNSSModule::RTCMHandler::getNextRTCMCount(uint16_t* rtcmId, uint32_t* txCount) {
+    size_t startIdx = _lastStatusIdx;
+    size_t i = startIdx;
+    if (count == 0) { // No messages at all
+        if (rtcmId) *rtcmId = 0;
+        if (txCount) *txCount = 0;
+        return;
+    }
+    do {
+        i = (i + 1) % count;  // Use member variable 'count' for array size
+        if (messages[i].enabled) {
+            if (rtcmId) *rtcmId = messages[i].id;
+            if (txCount) *txCount = messages[i].txCount;
+            _lastStatusIdx = i;
+            return;
+        }
+    } while (i != startIdx);  // Stop after full loop
+    // If no enabled found, return 0s
+    if (rtcmId) *rtcmId = 0;
+    if (txCount) *txCount = 0;
 }
