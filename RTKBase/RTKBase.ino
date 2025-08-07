@@ -4,7 +4,8 @@
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
 
-#include "RTKF3F.h"
+#include <RTKF3F.h>
+#include <RadioModule.h>
 #include "LCD.h"
 
 #define APPNAME "RTKBase 1.0"
@@ -44,6 +45,8 @@ GNSSModule gnss(SerialGNSS);
 GNSSModule::GNSSFix fix;
 int oldFixType = 0; // Store the last fix type to detect changes
 
+int rtcmCount = 0; // Count of RTCM types sent
+
 int timeSurveyStart = 0;
 bool showFix = false;
 bool showGngga = false;
@@ -77,7 +80,7 @@ void updateRTCMTypeCountDisplay() {
     static bool initialized = false;
 
     // Only update every 5 seconds (5000 ms)
-    if (!initialized || millis() - lastSwitchTime >= 5000) {
+    if (!initialized || millis() - lastSwitchTime >= 3000) {
         // Get next enabled RTCM type and count
         gnss.rtcmHandler.getNextRTCMCount(&currentRTCMId, &currentRTCMCount);
 
@@ -142,6 +145,7 @@ void loop() {
     case DEVICESTATE::DEVICE_STARTING: {
 
         gnss.sendCommand("unlog\r\n");
+		gnss.sendCommand("mode rover\r\n");
         gnss.sendCommand("gpgga com2 1\r\n");
         gnss.sendCommand("saveconfig\r\n");
 
@@ -215,17 +219,19 @@ void loop() {
         uint8_t rtcmBuf[1024];
         size_t len = 0;
 
-        //screen.setLine(0, "Operating");
-        //screen.setLine(1, String(radioMod.getRTCMNumMessages()));
-
-        if (gnss.readRTCM(rtcmBuf, len)) {
+        if (gnss.readRTCMfromGPS(rtcmBuf, len)) {
             if (len > 0) {
-                uint16_t type = gnss.getRTCMBits(rtcmBuf, 24, 12);
-                Serial.printf("%4zu bytes RTCM%4u\n", len, type);
+
+				uint16_t type = gnss.getRTCMType(rtcmBuf, len);
+				bool isValid = gnss.isValidRTCM(rtcmBuf, len);
+				bool isFragmented = len > RadioModule::RTCM_Fragmenter::MAX_PAYLOAD;
+				Serial.printf("Sending [RTCM %d] %s %s\r\n",
+                    type,
+                    isValid ? "Valid" : "Invalid",
+                    isFragmented ? "Fragments" : "Single");
+
                 radioMod.sendRTCM(rtcmBuf, len);
-				gnss.rtcmHandler.messages[gnss.rtcmHandler.findById(type)].txCount++;
-                delay(20);
-				radioMod.sendRTCMNumMessages();  // Send traffic summary message
+				gnss.rtcmHandler.incrementSentCount(type);
             }
         }
         updateRTCMTypeCountDisplay();

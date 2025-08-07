@@ -47,12 +47,13 @@ public:
     GNSSModule(HardwareSerial& serial);
     void begin(uint32_t baud,int rx, int tx);
     int detectUARTPort();
-    bool init();
+    //bool init();
     void sendCommand(const String& command);
     void sendReset();
     bool readGNSSData(GNSSFix& fix, bool showRaw);
     bool readFix(GNSSFix& fix);
-    bool readRTCM(uint8_t* buffer, size_t& len);
+    bool readRTCMfromGPS(uint8_t* buffer, size_t& len);
+    uint16_t getRTCMType(const uint8_t* buf, size_t len);
     const char* getRTCMName(uint16_t type);
     uint16_t getRTCMBits(const uint8_t* buffer, int startBit, int bitLen);
     static String fixTypeToString(int fixType);
@@ -61,7 +62,7 @@ public:
     bool parseGGA(const char* line, GNSSFix& fix);
     bool isValidRTCM(const uint8_t* data, size_t len);
 
-    const RTCMMessage& getRTCM(int index) const;
+    //const RTCMMessage& getRTCM(int index) const;
 
     class RTCMHandler {
     public:
@@ -98,6 +99,8 @@ public:
         int findById(uint16_t id) const;
         int findByName(const char* name) const;
         void getNextRTCMCount(uint16_t* rtcmId, uint32_t* count);
+        void incrementSentCount(uint16_t type);
+
     private:
         size_t _lastStatusIdx = 0; // Index of last shown message
     };

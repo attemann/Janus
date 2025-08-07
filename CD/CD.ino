@@ -15,6 +15,7 @@
 
 //RADIO
 #define RFM69_IRQ       4
+#define RFM69_IRQN digitalPinToInterrupt(RFM69_IRQ)
 #define RFM69_CS        5
 #define RFM69_SCK      18
 #define RFM69_MISO     19
@@ -22,12 +23,13 @@
 #define RFM69_RST      -1
 
 RadioModule::HWPins radioPins = {
-    .sck = RFM69_SCK,
-    .miso = RFM69_MISO,
-    .mosi = RFM69_MOSI,
-    .cs = RFM69_CS,
-    .irq = RFM69_IRQ,
-    .reset = RFM69_RST
+    .sck   = RFM69_SCK,
+    .miso  = RFM69_MISO,
+    .mosi  = RFM69_MOSI,
+    .cs    = RFM69_CS,
+    .irq   = RFM69_IRQ,
+    .reset = RFM69_RST,
+    .irqn  = RFM69_IRQN
 };
 
 RFM69 radio(radioPins.cs, radioPins.irq, true);
@@ -48,7 +50,7 @@ void setup() {
     delay(500);
 
     Serial.printf("%s starting\r\n", APPNAME);
-    speaker.begin(0.1, 26, 22, 25);
+    speaker.begin(1.0, 26, 22, 25);
 
     speaker.playWavFile(MY_WAV_FILE);
     speaker.playWavFile("/starting.wav");   

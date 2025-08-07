@@ -9,12 +9,13 @@
 class RadioModule {
 public:
     struct HWPins {
-        int sck = -1;
-        int miso = -1;
-        int mosi = -1;
-        int cs = -1;
-        int irq = -1;
+        int sck   = -1;
+        int miso  = -1;
+        int mosi  = -1;
+        int cs    = -1;
+        int irq   = -1;
         int reset = -1;
+		int irqn  = -1;  
 	};
 
     RadioModule(RFM69& radio);
@@ -27,10 +28,8 @@ public:
     void sendFragmentedRTCM(const uint8_t* data, size_t len);
     bool receive(uint8_t*& data, uint8_t& len);
     void sendWithReturnFreq(uint8_t destNode, int destFreq, int returnFreq, const uint8_t* msg, uint8_t len);
-    void sendRTCMNumMessages();
-    int getRTCMNumMessages();
 	int getSenderId();
-	int getTargetId();
+	int getTargetId();	
 
     // Nested RTCM Fragmenter class
     class RTCM_Fragmenter {
@@ -38,7 +37,7 @@ public:
         static const uint8_t MAX_PAYLOAD = 61;
         static const uint16_t MAX_TOTAL_LEN = 1029;
 
-        static void sendFragmented(RFM69& radio, uint8_t destId, const uint8_t* data, size_t len);
+        static void sendFragmented(RFM69& radio, uint8_t destId, const uint8_t* data, size_t len, uint8_t msgId);
     };
 
     // Nested RTCM Reassembler class
@@ -62,17 +61,18 @@ public:
         uint8_t totalExpected;
         size_t length;
         bool complete;
+        uint8_t expectedMsgId = 0xFF; // 0xFF means not initialized
+        static constexpr size_t FRAGMENT_HEADER_SIZE = 4;
+        static constexpr size_t FRAGMENT_PAYLOAD_SIZE = 61 - FRAGMENT_HEADER_SIZE; // = 57
+ 
     };
 
 private:
     RFM69& _radio;
     const uint8_t expectedVersion = 0x24;
-    int _numRTCMSent;
     void setBitrate(RFM69& radio, uint16_t bitrate);
 
-    bool isValidRTCM(const uint8_t* data, size_t len);
     uint32_t calculateCRC24Q(const uint8_t* data, size_t len);
-    void sendRTCMFragment(const uint8_t* data, size_t len, int fragmentIndex);
-    void sendRTCMNumSent();
-	void sendRTCMFragmented(const uint8_t* data, size_t len);
+    uint8_t currentMsgId = 0;
+
 };

@@ -25,7 +25,7 @@ enum EventCode : uint8_t {
 
 #define MAX_GU_UNITS 5
 #define SLOPELENGTH 100
-#define SURVEYINTIME 15
+#define SURVEYINTIME 10
 
 // Const for airborne detection
 #define DETECTOR_BUFFER_SIZE 30  // 3 secs with 0.1s interval

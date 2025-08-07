@@ -37,16 +37,17 @@ RadioModule::HWPins radioPins = {
     .mosi  = RFM69_MOSI,
     .cs    = RFM69_CS,
     .irq   = RFM69_IRQ,
-    .reset = RFM69_RST
+    .reset = RFM69_RST,
+	.irqn = RFM69_IRQN
 };
 
 RFM69 radio(radioPins.cs, radioPins.irq, true);
 RadioModule radioMod(radio);
 RadioModule::RTCM_Reassembler reassembler;
 
-bool showFix = false; // Set to true to print GNSS fix details
-bool showRTCM = false; // Set to true to print RTCM messages    
+bool showFix = true; // Set to true to print GNSS fix details
 bool showGngga = false; // Set to true to print GNGGA messages
+bool showRTCM = false; // Set to true to print GNGGA messages
 
 // UART
 #define GNSS_BAUD 115200
@@ -66,8 +67,6 @@ void haltUnit(String msg1, String msg2) {
     Serial.println(msg2);
     while (true);
 }
-
-int insertedRTCM = 0; // Counter for inserted RTCM messages 
 
 void setup() {
     Serial.begin(115200);
@@ -102,11 +101,8 @@ void setup() {
     else Serial.println("Gnss port ok");
 
     gnss.sendCommand("unlog\r\n");
-    //gnss.sendReset();
-    //gnss.sendCommand("config signalgroup 2\r\n");
-    gnss.sendCommand("mode rover uav\r\n");
+    gnss.sendCommand("mode rover\r\n");
     gnss.sendCommand("config rtk timeout 60\r\n");
-    //gnss.sendCommand("config rtk reliability 3 1\r\n");
     gnss.sendCommand("gpgga com2 1\r\n");
     gnss.sendCommand("saveconfig\r\n");
 
@@ -125,48 +121,53 @@ void loop() {
    if (radioMod.receive(data, len)) {
        if (len > 0) {
            switch (data[0]) {
-           case MSG_RTCM_NUM_SENT:   // Traffic summary message
-			   Serial.println("GU:MSG_RTCM_NUMSENT:Received RTCM traffic summary");
-               if (len == 5) {
-                   uint32_t numSent = (data[1] << 24) | (data[2] << 16) | (data[3] << 8) | data[4];
-                   Serial.printf("GU:RTCMs transmitted: %3lu\n", numSent);
-               }
-               else Serial.println("GU:Invalid RTCM traffic summary message length");
-               break;
-
            case MSG_RTCM:   // Full RTCM message (sent in one radio packet)
                Serial.println("GU:MSG_RTCM:Received Full RTCM message");
                if (gnss.isValidRTCM(data, len)) {
+                   uint16_t type = gnss.getRTCMType(data,len);
+                   Serial.printf("RTCMs inserted: type [%4d] %3u bytes\n", type, len);
                    SerialGNSS.write(data, len);
-                   uint16_t type = gnss.getRTCMBits(data, 24, 12);
-                   insertedRTCM++;
-                   Serial.printf("RTCMs inserted:    %3d, Now type [%4d] %3u bytes\n", insertedRTCM, type, len);
                }
-               else Serial.println("GU:Invalid full RTCM message");
+               else Serial.println(ANSI_RED "GU:Invalid full RTCM message" ANSI_RESET);
                break;
 
            case MSG_RTCM_FRAGMENT:   // Fragmented RTCM
-			   Serial.println("GU:MSG_RTCM_FRAGMENT:Received RTCM fragment");
+			   //Serial.println("GU:MSG_RTCM_FRAGMENT:Received fragment");
                reassembler.acceptFragment(data, len);
-               if (data[1] == 0) { // First fragment
-                   Serial.println("---");
-               }
 
-			   radioMod.printRTCMSegment(data, len);
+			   //radioMod.printRTCMSegment(data, len);
                if (reassembler.isComplete()) {
-				   Serial.printf("GU:MSG_RTCM_FRAGMENT complete, %u fragments received\n", reassembler.getReceivedCount());
+                   //Serial.printf("GU:MSG_RTCM_FRAGMENT complete, %u fragments received\n", reassembler.getReceivedCount());
+
                    const uint8_t* rtcm = reassembler.getData();
                    size_t rtcmLen = reassembler.getLength();
 
+                   //for (size_t i = 0; i < rtcmLen; ++i) {
+                   //    Serial.printf("%02X ", rtcm[i]);
+                   //    if ((i + 1) % 16 == 0) Serial.println();
+                   //}
+                   //Serial.println();
+
+                   // Strong debug: show length, expected from header
+                   //uint16_t headerPayloadLen = ((rtcm[1] & 0x3F) << 8) | rtcm[2];
+                   //Serial.printf("  Buffer length: %u\n", (unsigned)rtcmLen);
+                   //Serial.printf("  RTCM header payload length: %u\n", headerPayloadLen);
+                   //Serial.printf("  Total RTCM expected length (header+payload+CRC): %u\n", (unsigned)(3 + headerPayloadLen + 3));
+                   //Serial.printf("  First byte: 0x%02X\n", rtcm[0]);
+
+                   // Now do validity check
                    if (gnss.isValidRTCM(rtcm, rtcmLen)) {
-					   Serial.println("GU:MSG_RTCM_FRAGMENT received");
+                       Serial.println("GU:MSG_RTCM_FRAGMENT " ANSI_GREEN "Valid" ANSI_RESET);
+                       uint16_t type = gnss.getRTCMType(rtcm, rtcmLen);
+                       Serial.printf("Inserting " ANSI_GREEN " RTCM[%4d]" ANSI_RESET " %3u bytes\n", type, len);
                        SerialGNSS.write(rtcm, rtcmLen);
-				   }
-				   else Serial.println("GU:MSG_RTCM_FRAGMENT Invalid fragment received");
+                   }
+                   else {
+                       Serial.println("GU:MSG_RTCM_FRAGMENT " ANSI_RED "Invalid" ANSI_RESET);
+                   }
                    reassembler.reset();
                }
                break;
-
            case MSG_ARENA_SETTINGS:
                Serial.println("GU:MSG_ARENA_SETTINGS: Received Arena settings");
 			   arena.decodeArenaSettings(data);
@@ -192,5 +193,5 @@ void loop() {
       //Serial.println("---");
   }
   
-  delay(1);
+  delay(2);
 }

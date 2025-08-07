@@ -109,7 +109,7 @@ String GNSSModule::fixTypeToString(int fixType) {
     }
 }
 
-bool GNSSModule::readRTCM(uint8_t* buffer, size_t& len) {
+bool GNSSModule::readRTCMfromGPS(uint8_t* buffer, size_t& len) {
     while (_serial.available()) {
         if (_serial.read() != MSG_RTCM) continue;
 
@@ -136,11 +136,35 @@ bool GNSSModule::readRTCM(uint8_t* buffer, size_t& len) {
     return false;
 }
 
+uint16_t GNSSModule::getRTCMType(const uint8_t* buf, size_t len) {
+    if (len < 6 || buf[0] != 0xD3) return 0; // sanity check
+
+    // RTCM type is the first 12 bits after the 3-byte header
+    // Byte 3: upper 8 bits, Byte 4: upper 4 bits
+    uint16_t type = ((buf[3] << 4) | (buf[4] >> 4)) & 0x0FFF;
+
+    //for (int i = 0; i < len; i++) {
+    //    Serial.printf("%02X ", buf[i]);
+    //}
+
+    return type;
+}
+
 bool GNSSModule::isValidRTCM(const uint8_t* data, size_t len) {
-    if (data[0] != MSG_RTCM || len < 6) return false;
-    uint16_t payloadLen = ((data[1] & MSG_RTCM) << 8) | data[2];
+    if (data[0] != 0xD3 || len < 6) return false;
+    uint16_t payloadLen = ((data[1] & 0x3F) << 8) | data[2];
+    if (3 + payloadLen + 3 > len) return false; // not enough data
+
+    //Serial.printf("Validating RTCM: payloadLen=%u, totalLen=%u\n", payloadLen, len);
+    //Serial.print("Bytes for CRC: ");
+    //for (size_t i = 0; i < 3 + payloadLen; ++i)
+    //    Serial.printf("%02X ", data[i]);
+    //Serial.println();
+
     uint32_t crc = calculateCRC24Q(data, 3 + payloadLen);
     uint32_t recvCrc = (data[3 + payloadLen] << 16) | (data[4 + payloadLen] << 8) | data[5 + payloadLen];
+    //Serial.printf("CRC calc: %06lX  CRC recv: %06lX\n", crc, recvCrc);
+
     return crc == recvCrc;
 }
 
@@ -362,54 +386,60 @@ void GNSSModule::showFix(const GNSSFix& fix) {
 }
 
 GNSSModule::RTCMHandler::RTCMHandler(GNSSModule* gnss) : parent(gnss) {
+    add("rtcm1033", 1033, 10.0f, true, "Antenna + Firmware");
+    add("rtcm1006", 1006, 10.0f, true, "Stat. Ref (with height)");
+    add("rtcm1074", 1074, 1.0f,  true, "GPS MSM4");
+    add("rtcm1124", 1124, 1.0f,  true, "BeiDou MSM4");
+    add("rtcm1084", 1084, 1.0f,  true, "GLONASS MSM4");
+    add("rtcm1094", 1094, 1.0f,  true, "Galileo MSM4");
+
     // Example messages, add more as needed
-    add("rtcm1001", 1001, 1.0f, false, "GPS L1 Obs");
-    add("rtcm1002", 1002, 1.0f, false, "GPS L1 Obs (Ext)");
-    add("rtcm1003", 1003, 1.0f, false, "GPS L1/L2 Obs");
-    add("rtcm1004", 1004, 1.0f, false, "GPS L1/L2 Obs (Ext)");
-    add("rtcm1005", 1005, 1.0f, false, "Stat. Ref (no height)");
-    add("rtcm1006", 1006, 1.0f, true, "Stat. Ref (with height)");
-    add("rtcm1007", 1007, 1.0f, false, "Antenna Descriptor");
-    add("rtcm1008", 1008, 1.0f, false, "Ant. Descriptor + SN");
-    add("rtcm1033", 1033, 2.7f, true, "Antenna + Firmware");
+    //add("rtcm1001", 1001, 1.0f, false, "GPS L1 Obs");
+    //add("rtcm1002", 1002, 1.0f, false, "GPS L1 Obs (Ext)");
+    //add("rtcm1003", 1003, 1.0f, false, "GPS L1/L2 Obs");
+    //add("rtcm1004", 1004, 1.0f, false, "GPS L1/L2 Obs (Ext)");
+    //add("rtcm1005", 1005, 1.0f, false, "Stat. Ref (no height)");
 
-    add("rtcm1071", 1071, 1.0f, false, "GPS MSM1");
-    add("rtcm1072", 1072, 1.0f, false, "GPS MSM2");
-    add("rtcm1073", 1073, 1.0f, false, "GPS MSM3");
-    add("rtcm1074", 1074, 1.1f, true,  "GPS MSM4");
-    add("rtcm1075", 1075, 1.0f, false, "GPS MSM5");
-    add("rtcm1076", 1076, 1.0f, false, "GPS MSM6");
-    add("rtcm1077", 1077, 1.0f, false, "GPS MSM7");
+    //add("rtcm1007", 1007, 1.0f, false, "Antenna Descriptor");
+    //add("rtcm1008", 1008, 1.0f, false, "Ant. Descriptor + SN");
 
-    add("rtcm1081", 1081, 1.0f, false, "GLONASS MSM1");
-    add("rtcm1082", 1082, 1.0f, false, "GLONASS MSM2");
-    add("rtcm1083", 1083, 1.0f, false, "GLONASS MSM3");
-    add("rtcm1084", 1084, 2.4f, true,  "GLONASS MSM4");
-    add("rtcm1085", 1085, 1.0f, false, "GLONASS MSM5");
-    add("rtcm1086", 1086, 1.0f, false, "GLONASS MSM6");
-    add("rtcm1087", 1087, 1.0f, false, "GLONASS MSM7");
+    //add("rtcm1071", 1071, 1.0f, false, "GPS MSM1");
+    //add("rtcm1072", 1072, 1.0f, false, "GPS MSM2");
+    //add("rtcm1073", 1073, 1.0f, false, "GPS MSM3");
 
-    add("rtcm1091", 1091, 1.0f, false, "Galileo MSM1");
-    add("rtcm1092", 1092, 1.0f, false, "Galileo MSM2");
-    add("rtcm1093", 1093, 1.0f, false, "Galileo MSM3");
-    add("rtcm1094", 1094, 3.6f, true,  "Galileo MSM4");
-    add("rtcm1095", 1095, 1.0f, false, "Galileo MSM5");
-    add("rtcm1096", 1096, 1.0f, false, "Galileo MSM6");
-    add("rtcm1097", 1097, 1.0f, false, "Galileo MSM7");
+    //add("rtcm1075", 1075, 1.0f, false, "GPS MSM5");
+    //add("rtcm1076", 1076, 1.0f, false, "GPS MSM6");
+    //add("rtcm1077", 1077, 1.0f, false, "GPS MSM7");
 
-    add("rtcm1121", 1121, 1.0f, false, "BeiDou MSM1");
-    add("rtcm1122", 1122, 1.0f, false, "BeiDou MSM2");
-    add("rtcm1123", 1123, 1.0f, false, "BeiDou MSM3");
-    add("rtcm1124", 1124, 5.9f, true,  "BeiDou MSM4");
-    add("rtcm1125", 1125, 1.0f, false, "BeiDou MSM5");
-    add("rtcm1126", 1126, 1.0f, false, "BeiDou MSM6");
-    add("rtcm1127", 1127, 1.0f, false, "BeiDou MSM7");
+    //add("rtcm1081", 1081, 1.0f, false, "GLONASS MSM1");
+    //add("rtcm1082", 1082, 1.0f, false, "GLONASS MSM2");
+    //add("rtcm1083", 1083, 1.0f, false, "GLONASS MSM3");
 
-    add("rtcm1230", 1230, 10.0f, false, "GLONASS L1/L2 Bias");
+    //add("rtcm1085", 1085, 1.0f, false, "GLONASS MSM5");
+    //add("rtcm1086", 1086, 1.0f, false, "GLONASS MSM6");
+    //add("rtcm1087", 1087, 1.0f, false, "GLONASS MSM7");
 
-    add("rtcm4072", 4072, 1.0f, false, "u-blox Proprietary");
-    add("rtcm4073", 4073, 1.0f, false, "u-blox Subtype A");
-    add("rtcm4074", 4074, 1.0f, false, "u-blox Subtype B");
+    //add("rtcm1091", 1091, 1.0f, false, "Galileo MSM1");
+    //add("rtcm1092", 1092, 1.0f, false, "Galileo MSM2");
+    //add("rtcm1093", 1093, 1.0f, false, "Galileo MSM3");
+
+    //add("rtcm1095", 1095, 1.0f, false, "Galileo MSM5");
+    //add("rtcm1096", 1096, 1.0f, false, "Galileo MSM6");
+    //add("rtcm1097", 1097, 1.0f, false, "Galileo MSM7");
+
+    //add("rtcm1121", 1121, 1.0f, false, "BeiDou MSM1");
+    //add("rtcm1122", 1122, 1.0f, false, "BeiDou MSM2");
+    //add("rtcm1123", 1123, 1.0f, false, "BeiDou MSM3");
+
+    //add("rtcm1125", 1125, 1.0f, false, "BeiDou MSM5");
+    //add("rtcm1126", 1126, 1.0f, false, "BeiDou MSM6");
+    //add("rtcm1127", 1127, 1.0f, false, "BeiDou MSM7");
+
+    //add("rtcm1230", 1230, 10.0f, false, "GLONASS L1/L2 Bias");
+
+    //add("rtcm4072", 4072, 1.0f, false, "u-blox Proprietary");
+    //add("rtcm4073", 4073, 1.0f, false, "u-blox Subtype A");
+    //add("rtcm4074", 4074, 1.0f, false, "u-blox Subtype B");
 
 }
 
@@ -513,4 +543,10 @@ void GNSSModule::RTCMHandler::getNextRTCMCount(uint16_t* rtcmId, uint32_t* txCou
     // If no enabled found, return 0s
     if (rtcmId) *rtcmId = 0;
     if (txCount) *txCount = 0;
+}
+
+void GNSSModule::RTCMHandler::incrementSentCount(uint16_t type) {
+    int idx = findById(type);
+    if (idx >= 0) messages[idx].txCount++;
+    Serial.printf("messages[idx].txCount = %d\r\n", messages[idx].txCount);
 }
