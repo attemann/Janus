@@ -3,12 +3,10 @@ String inputLine = "";  // Buffer for brukerinndata
 
 extern HardwareSerial SerialGNSS;  // GNSS serial port
 extern bool showFix;
-extern bool showRTCM;
 extern bool showGngga;
 
 void showMenu() {
     Serial.println("--- GNSS Console Commands ---");
-
     Serial.println("  ?       - Show help");
     Serial.println("  g       - Enable gngga output");
     Serial.println("  f       - Enable fix output");

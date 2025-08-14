@@ -3,51 +3,26 @@
 #include <Arduino.h>
 #include <RFM69.h>
 #include <RTKF3F.h>
-
 #include "GU.h"
-
 
 #define APPNAME "GU 1.0"
 
+#define THIS_NODE_ID NODEID_GU
+
 // Radio
-#define RFM69_CS 21
-#define RFM69_IRQ 1
-#define RFM69_IRQN digitalPinToInterrupt(RFM69_IRQ)
-#define RFM69_RST -1
+inline constexpr int8_t RFM69_MISO = 20;
+inline constexpr int8_t RFM69_MOSI = 18;
+inline constexpr int8_t RFM69_SCK  = 19;
+inline constexpr int8_t RFM69_CSS  = 21;
+inline constexpr int8_t RFM69_IRQ  = 16;
+inline constexpr int8_t RFM69_IRQN = digitalPinToInterrupt(RFM69_IRQ);
+inline constexpr int8_t RFM69_RST  = -1;
 
-#define RFM69_SCK 19
-#define RFM69_MISO 20
-#define RFM69_MOSI 18
-
-const char* getMessageName(uint8_t id) {
-    switch (id) {
-    case MSG_RTCM_NUM_SENT:    return "RTCM_NUMSENT";
-    case MSG_RTCM:             return "RTCM";
-    case MSG_RTCM_FRAGMENT:    return "RTCMFRAGMENT";
-    case MSG_ARENA_SETTINGS:   return "FLIGHT_SETTINGS";
-	case MSG_GLIDER_SETTINGS:  return "GLIDER_SETTINGS";
-    case MSG_REQ_POS:          return "REQ_POS";
-    default:                   return "UNKNOWN";
-    }
-}
-
-RadioModule::HWPins radioPins = {
-    .sck   = RFM69_SCK,
-    .miso  = RFM69_MISO,
-    .mosi  = RFM69_MOSI,
-    .cs    = RFM69_CS,
-    .irq   = RFM69_IRQ,
-    .reset = RFM69_RST,
-	.irqn = RFM69_IRQN
-};
-
-RFM69 radio(radioPins.cs, radioPins.irq, true);
-RadioModule radioMod(radio);
+RadioModule radioMod(RFM69_CSS, RFM69_IRQ, true);
 RadioModule::RTCM_Reassembler reassembler;
 
 bool showFix = true; // Set to true to print GNSS fix details
 bool showGngga = false; // Set to true to print GNGGA messages
-bool showRTCM = false; // Set to true to print GNGGA messages
 
 // UART
 #define GNSS_BAUD 115200
@@ -71,28 +46,56 @@ void haltUnit(String msg1, String msg2) {
 void setup() {
     Serial.begin(115200);
     while (!Serial);
-    delay(500);
+    delay(3000);
 
     Serial.printf("%s starting\r\n", APPNAME);
- 
-    // Radio
-    if (!radioMod.init(radioPins, NODEID_GU, NETWORK_ID, FREQUENCY_CD)) {
-        radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_ERROR, ERROR_RADIO_INIT);
-        haltUnit("Radio init", "Failure, freeze");
-    }
-    else Serial.println("Radio init ok");
 
-    if (!radioMod.verify()) {
-        radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_ERROR, ERROR_RADIO_VERIFY);
-        haltUnit("Radio verify", "Failure, freeze");
-    }
-    else Serial.println("Radio verified");
+    ////////////////////////////////////
 
-	Serial.println("Before sendmessage");
+    if (!radioMod.init(RFM69_MISO, RFM69_MOSI, RFM69_SCK, THIS_NODE_ID, NETWORK_ID, FREQUENCY_RTCM)) {
+        Serial.println("Radio init failed");
+        while (1);
+    }
+
+	Serial.println("------------------Test 1 ---------------------");
+    uint8_t buf[2];
+    size_t buflen = 2;
+    buf[0] = MSG_INFORMATION;
+	buf[1] = INFO_DEVICE_STARTING;
+	radioMod.send(NODEID_CD, buf, buflen, true);
+    if (!radioMod.sendWithReturnFreq(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, buf, buflen)) {
+        Serial.println("sendWithReturnFreq failed");
+    }
+
+
+    Serial.println("------------------Test 2 ---------------------");
+
+    for (int i = 0; i < 3; i++) {
+		Serial.printf("GU:sendMessageCode 'Hello %d' to CD\n", i);
+        radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, INFO_TRANSITION_GETTINGFIX);
+        delay(1000);
+    }
+
+
+
+    Serial.println("------------------Test 3 ---------------------");
+    for (int j = 0; j < 3; j++) {
+        const char msg[] = "Hei 1,2,3";
+        Serial.printf("GU:Sending hei from %d to %d '", THIS_NODE_ID, NODEID_CD);
+        Serial.print(msg);
+        Serial.println("'");
+
+
+        radioMod.send(NODEID_CD, msg, strlen(msg), true);
+
+        delay(1000);  // Wait 1 seconds
+    }
+
+    while (false);
+
     //radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, INFO_DEVICE_STARTING);
-    Serial.println("after sendmessage");
-
-    // GNSS
+    //delay(1000);
+    // GNSS 
     gnss.begin(GNSS_BAUD, UART_RX, UART_TX);
 	Serial.println("GNSS port starting...");
 
@@ -110,34 +113,65 @@ void setup() {
 
   Serial.println ("RTKF3F Glider unit ready!");
   showMenu();
-
 }
 
 void loop() {
-   readConsole();
+    readConsole();
 
-   uint8_t* data = nullptr;
-   uint8_t len = 0;
+    if (gnss.gpsDataAvailable()) {
+		//gpsBuf = gnss.readGPS();    
+        const uint8_t* buf = gnss.getBuffer();
+        size_t len = gnss.getBufLen();
+		switch (buf[0]) {
+            case 0: // No data received
+                break;
+            case '$': // NMEA message
+                Serial.println("GU:Received NMEA message:");
+                    if (gnss.parseGGA(buf, len, fix)) {
+                        if (showFix) gnss.showFix(fix);
+                    }
+                    else if (buf[0] == '$' && strstr((char*)buf, "GGA")) {
+                        // It is a GGA, but empty (no fenix). Optionally print a shorter note.
+                        Serial.println("GU:Empty GGA (no fix)");
+                    }
+                break;
+            case '!': // UBX message
+                SerialGNSS.write(buf, len);
+                SerialGNSS.flush();
+                break;
+            case '#': // Command response
+                break;
+            case 0xB5: // UBX message
+                SerialGNSS.write(buf, len);
+                SerialGNSS.flush();
+                break;
+            default:
+                Serial.printf("GU:Unknown GPS message: %02X\n", buf[0]);
+                break;
+           }
+    }
 
-   // 1. Check for received radio packet
-   if (radioMod.receive(data, len)) {
-       if (len > 0) {
-           switch (data[0]) {
-           case MSG_RTCM:   // Full RTCM message (sent in one radio packet)
+    uint8_t radioBuf[1024];
+    size_t radioLen = 0;
+    memset(radioBuf, 0, sizeof(radioBuf));
+        
+   if (radioMod.receive(radioBuf, radioLen)) {
+       if (radioLen > 0) {
+           switch (radioBuf[0]) {
+           case MSG_RTCM:   
                Serial.println("GU:MSG_RTCM:Received Full RTCM message");
-               if (gnss.isValidRTCM(data, len)) {
-                   uint16_t type = gnss.getRTCMType(data,len);
-                   Serial.printf("RTCMs inserted: type [%4d] %3u bytes\n", type, len);
-                   SerialGNSS.write(data, len);
+               if (gnss.isValidRTCM(radioBuf, radioLen)) {
+                   uint16_t type = gnss.getRTCMType(radioBuf, radioLen);
+                   Serial.printf("RTCMs inserted: type [%4d] %3u bytes\n", type, radioLen);
+                   SerialGNSS.write(radioBuf, radioLen);
                }
                else Serial.println(ANSI_RED "GU:Invalid full RTCM message" ANSI_RESET);
                break;
 
-           case MSG_RTCM_FRAGMENT:   // Fragmented RTCM
-			   //Serial.println("GU:MSG_RTCM_FRAGMENT:Received fragment");
-               reassembler.acceptFragment(data, len);
+           case MSG_RTCM_FRAGMENT:   
+               reassembler.acceptFragment(radioBuf, radioLen);
 
-			   //radioMod.printRTCMSegment(data, len);
+			   //radioMod.printRTCMSegment(radioBuf, radioLen);
                if (reassembler.isComplete()) {
                    //Serial.printf("GU:MSG_RTCM_FRAGMENT complete, %u fragments received\n", reassembler.getReceivedCount());
 
@@ -148,7 +182,6 @@ void loop() {
                    //    Serial.printf("%02X ", rtcm[i]);
                    //    if ((i + 1) % 16 == 0) Serial.println();
                    //}
-                   //Serial.println();
 
                    // Strong debug: show length, expected from header
                    //uint16_t headerPayloadLen = ((rtcm[1] & 0x3F) << 8) | rtcm[2];
@@ -157,11 +190,10 @@ void loop() {
                    //Serial.printf("  Total RTCM expected length (header+payload+CRC): %u\n", (unsigned)(3 + headerPayloadLen + 3));
                    //Serial.printf("  First byte: 0x%02X\n", rtcm[0]);
 
-                   // Now do validity check
                    if (gnss.isValidRTCM(rtcm, rtcmLen)) {
                        Serial.println("GU:MSG_RTCM_FRAGMENT " ANSI_GREEN "Valid" ANSI_RESET);
                        uint16_t type = gnss.getRTCMType(rtcm, rtcmLen);
-                       Serial.printf("Inserting " ANSI_GREEN " RTCM[%4d]" ANSI_RESET " %3u bytes\n", type, len);
+                       Serial.printf("Inserting " ANSI_GREEN " RTCM[%4d]" ANSI_RESET " %3u bytes\n", type, rtcmLen);
                        SerialGNSS.write(rtcm, rtcmLen);
                    }
                    else {
@@ -172,28 +204,21 @@ void loop() {
                break;
            case MSG_ARENA_SETTINGS:
                Serial.println("GU:MSG_ARENA_SETTINGS: Received Arena settings");
-			   arena.decodeArenaSettings(data);
+			   arena.decodeArenaSettings(radioBuf);
                break;
            case MSG_REQ_POS:
-               // send relative pos to base (true), not pilot (false)
                Serial.println("GU:MSG_REQ_POS: Received position request");
                //txRelPos(fix, true);
                break;
            default:
-               Serial.printf("GU:default: Unknown packet: 0x%02X (%s) len=%u", data[0], getMessageName(data[0]), len);
-               for (uint8_t i = 0; i < len; i++) {
-                   Serial.printf(" %02X", data[i]);
+               Serial.printf("GU:default: Unknown packet: 0x%02X (%s) len=%u", radioBuf[0], getMessageName(radioBuf[0]), radioLen);
+               for (uint8_t i = 0; i < radioLen; i++) {
+                   Serial.printf(" %02X", radioBuf[i]);
                }
                Serial.println();
                break;
            }
        }
    }
-
-  if (gnss.readGNSSData(fix, showGngga)) {
-	  if (showFix) gnss.showFix(fix);
-      //Serial.println("---");
-  }
-  
-  delay(2);
+   yield(); // Allow other tasks to run
 }

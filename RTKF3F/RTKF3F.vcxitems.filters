@@ -27,6 +27,9 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\Glider.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\RTKF3F.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(MSBuildThisFileDirectory)src\GNSSModule.h">

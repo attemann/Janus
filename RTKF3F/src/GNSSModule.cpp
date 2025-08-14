@@ -15,6 +15,10 @@ void GNSSModule::begin(uint32_t baud, int RX, int TX) {
     _serial.begin(baud, SERIAL_8N1, RX, TX);
 }
 
+bool GNSSModule::gpsDataAvailable() {
+    return _serial.available() > 0;
+}
+
 int GNSSModule::detectUARTPort() {
     const char* testCommands[] = {
         "versiona com1",
@@ -55,7 +59,6 @@ void GNSSModule::sendCommand(const String& command) {
     while ((millis() - start) < COMMANDDELAY) {
         if (_serial.available()) Serial.write(_serial.read());
     }
-
 }
 
 void GNSSModule::sendReset() {
@@ -67,32 +70,8 @@ void GNSSModule::sendReset() {
     while ((millis() - start) < 5000) {
         if (_serial.available()) Serial.write(_serial.read());
     }
-
 }
 
-bool GNSSModule::readFix(GNSSFix& fix) {
-    while (_serial.available()) {
-        char c = _serial.read();
-
-        if (c == '$') {
-            _nmeaIdx = 0;
-        }
-
-        if (_nmeaIdx < sizeof(_nmeaBuffer) - 1) {
-            _nmeaBuffer[_nmeaIdx++] = c;
-        }
-
-        if (c == '\n' && _nmeaIdx > 6) {
-            _nmeaBuffer[_nmeaIdx] = '\0';
-            _nmeaIdx = 0;
-
-            if (strncmp(_nmeaBuffer, "$GNGGA", 6) == 0) {
-                return parseGGA(_nmeaBuffer, fix);
-            }
-        }
-    }
-    return false;
-}
 
 String GNSSModule::fixTypeToString(int fixType) {
     switch (fixType) {
@@ -109,7 +88,111 @@ String GNSSModule::fixTypeToString(int fixType) {
     }
 }
 
-bool GNSSModule::readRTCMfromGPS(uint8_t* buffer, size_t& len) {
+bool GNSSModule::readGPS() {
+
+    int first = _serial.peek();
+    if (first == '$') {
+        Serial.println("GNSS: Reading NMEA message");
+        if (readNMEA()) {
+            Serial.println("GU:Received NMEA message:");
+            return true;
+        }
+    }
+    else if (first == '#') {
+        Serial.println("GNSS: Reading CommandResponse");
+        if (readCommandResponse()) {
+            printAscii();
+            return true;
+        }
+    }
+    else if (first == 0xD3) {
+        Serial.println("GNSS: Reading RTCM message");
+        return readRTCM(_gpsBuf, _gpsBufLen);
+    }
+    else {
+        // Unrecognized byte, consume and continue searching for start byte
+        _serial.read();
+    }
+    return false; // No valid message found
+}
+
+void GNSSModule::printAscii() {
+    for (size_t i = 0; i < _gpsBufLen; ++i) {
+        char c = _gpsBuf[i];
+        if (c >= 32 && c <= 126) // Printable ASCII range
+            Serial.print(c);
+        else if (c == '\r')
+            Serial.print("\\r");
+        else if (c == '\n')
+            Serial.print("\\n");
+        else
+            Serial.print('.');
+    }
+    Serial.println();
+}
+
+bool GNSSModule::readNMEA() {
+    static uint8_t nmeaBuf[128];
+    static size_t nmeaPos = 0;
+    static bool inSentence = false;
+
+    while (_serial.available()) {
+        char c = _serial.read();
+
+        if (!inSentence) {
+            if (c == '$') {
+                inSentence = true;
+                nmeaPos = 0;
+                nmeaBuf[nmeaPos++] = c;
+            }
+        }
+        else {
+            if (nmeaPos < sizeof(nmeaBuf) - 1) {
+                nmeaBuf[nmeaPos++] = c;
+            }
+            else {
+                // Overflow, reset and wait for next sentence
+                inSentence = false;
+                nmeaPos = 0;
+                continue;
+            }
+            if (c == '\n') {
+                nmeaBuf[nmeaPos] = '\0'; // null-terminate
+                // Save to class properties:
+                memcpy(_gpsBuf, nmeaBuf, nmeaPos + 1);
+                _gpsBufLen = nmeaPos;
+                inSentence = false; // Ready for next one
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool GNSSModule::readCommandResponse() {
+    size_t idx = 0;
+    while (_serial.available()) {
+        char c = _serial.read();
+        if (idx < 127) { // leave room for null terminator
+            _gpsBuf[idx++] = c;
+        }
+        if (c == '\n' || idx >= 127) { // End of response or buffer full
+            _gpsBufLen = idx;
+            _gpsBuf[idx] = '\0'; // Null-terminate (safe for printing)
+            // Optionally strip trailing '\r'
+            if (idx >= 2 && _gpsBuf[idx - 2] == '\r') {
+                _gpsBuf[idx - 2] = '\n';
+                _gpsBuf[idx - 1] = '\0';
+                idx--;
+            }
+            return true;
+        }
+    }
+    _gpsBufLen = idx;
+    return false;
+}
+
+bool GNSSModule::readRTCM(uint8_t* buffer, size_t& len) {
     const unsigned long timeout = 100;  // milliseconds
     unsigned long startTime;
 
@@ -154,15 +237,7 @@ bool GNSSModule::readRTCMfromGPS(uint8_t* buffer, size_t& len) {
 
 uint16_t GNSSModule::getRTCMType(const uint8_t* buf, size_t len) {
     if (len < 6 || buf[0] != 0xD3) return 0; // sanity check
-
-    // RTCM type is the first 12 bits after the 3-byte header
-    // Byte 3: upper 8 bits, Byte 4: upper 4 bits
     uint16_t type = ((buf[3] << 4) | (buf[4] >> 4)) & 0x0FFF;
-
-    //for (int i = 0; i < len; i++) {
-    //    Serial.printf("%02X ", buf[i]);
-    //}
-
     return type;
 }
 
@@ -171,15 +246,8 @@ bool GNSSModule::isValidRTCM(const uint8_t* data, size_t len) {
     uint16_t payloadLen = ((data[1] & 0x3F) << 8) | data[2];
     if (3 + payloadLen + 3 > len) return false; // not enough data
 
-    //Serial.printf("Validating RTCM: payloadLen=%u, totalLen=%u\n", payloadLen, len);
-    //Serial.print("Bytes for CRC: ");
-    //for (size_t i = 0; i < 3 + payloadLen; ++i)
-    //    Serial.printf("%02X ", data[i]);
-    //Serial.println();
-
     uint32_t crc = calculateCRC24Q(data, 3 + payloadLen);
     uint32_t recvCrc = (data[3 + payloadLen] << 16) | (data[4 + payloadLen] << 8) | data[5 + payloadLen];
-    //Serial.printf("CRC calc: %06lX  CRC recv: %06lX\n", crc, recvCrc);
 
     return crc == recvCrc;
 }
@@ -205,58 +273,28 @@ int GNSSModule::parseField(const String& line, int num) {
     return line.substring(start, end).toInt();
 }
 
-bool GNSSModule::readGNSSData(GNSSFix& fix, bool showRaw) {
-    static char nmeaBuffer[100];
-    static size_t idx = 0;
-
-    while (_serial.available()) {
-        char c = _serial.read();
-
-        if (showRaw) {
-            Serial.write(c);
-        }
-
-        if (c == '$') {
-            idx = 0;
-            nmeaBuffer[idx++] = c;
-        }
-        else if (c == '\n' && idx > 6) {
-            nmeaBuffer[idx] = '\0';  // Null-terminate
-
-            // Attempt to parse if it's a GGA sentence
-            if (strncmp(nmeaBuffer, "$GNGGA", 6) == 0) {
-                return parseGGA(nmeaBuffer, fix);  // returns true if parsed successfully
-            }
-
-            // Reset buffer for next sentence
-            idx = 0;
-        }
-        else if (idx < sizeof(nmeaBuffer) - 1) {
-            nmeaBuffer[idx++] = c;
-        }
-    }
-
-    return false;  // No complete valid line yet
-}
-
-
-bool GNSSModule::parseGGA(const char* line, GNSSFix& fix) {
-    char buf[100];
-    strncpy(buf, line, sizeof(buf));
-    buf[sizeof(buf) - 1] = '\0';
-
-    // Tokenization preserving empty fields
+bool GNSSModule::parseGGA(const uint8_t* buf, size_t len, GNSSFix& fix) {
     const int MAX_FIELDS = 20;
+    const int BUF_SIZE = 128;
+    char local[BUF_SIZE];
+
+    // 1. Make a safe local copy and ensure null-terminated
+    if (len >= BUF_SIZE) len = BUF_SIZE - 1;
+    memcpy(local, buf, len);
+    local[len] = '\0';
+
+    // 2. Skip initial '$' if present
+    char* p = local;
+    if (*p == '$') ++p;
+
+    // 3. Tokenize by ','
     const char* fields[MAX_FIELDS] = { nullptr };
     int fieldCount = 0;
-
-    char* p = buf;
+    fields[fieldCount++] = strtok(p, ",");
     while (fieldCount < MAX_FIELDS) {
-        fields[fieldCount++] = p;
-        char* comma = strchr(p, ',');
-        if (!comma) break;
-        *comma = '\0';
-        p = comma + 1;
+        char* token = strtok(nullptr, ",");
+        if (!token) break;
+        fields[fieldCount++] = token;
     }
 
     if (fieldCount < 9) return false;
@@ -267,6 +305,9 @@ bool GNSSModule::parseGGA(const char* line, GNSSFix& fix) {
         fix.hour = int(rawTime / 10000);
         fix.minute = int(fmod(rawTime / 100, 100));
         fix.second = fmod(rawTime, 100);
+    }
+    else {
+        fix.hour = fix.minute = fix.second = 0;
     }
 
     // Lat/lon
@@ -281,7 +322,9 @@ bool GNSSModule::parseGGA(const char* line, GNSSFix& fix) {
         fix.lat = deg + min / 60.0f;
         if (latDir == 'S') fix.lat = -fix.lat;
     }
-    else fix.lat = 0;
+    else {
+        fix.lat = 0;
+    }
 
     if (lonRaw > 0 && (lonDir == 'E' || lonDir == 'W')) {
         int deg = int(lonRaw / 100);
@@ -289,7 +332,9 @@ bool GNSSModule::parseGGA(const char* line, GNSSFix& fix) {
         fix.lon = deg + min / 60.0f;
         if (lonDir == 'W') fix.lon = -fix.lon;
     }
-    else fix.lon = 0;
+    else {
+        fix.lon = 0;
+    }
 
     fix.fixType = fields[6] && *fields[6] ? atoi(fields[6]) : 0;
     fix.SIV = fields[7] && *fields[7] ? atoi(fields[7]) : 0;
@@ -304,6 +349,7 @@ bool GNSSModule::parseGGA(const char* line, GNSSFix& fix) {
 
     return true;
 }
+
 
 const char* GNSSModule::getRTCMName(uint16_t type) {
     switch (type) {
@@ -564,5 +610,4 @@ void GNSSModule::RTCMHandler::getNextRTCMCount(uint16_t* rtcmId, uint32_t* txCou
 void GNSSModule::RTCMHandler::incrementSentCount(uint16_t type) {
     int idx = findById(type);
     if (idx >= 0) messages[idx].txCount++;
-    //Serial.printf("messages[idx].txCount = %d\r\n", messages[idx].txCount);
 }

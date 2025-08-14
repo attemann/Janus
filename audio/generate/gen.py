@@ -8,10 +8,10 @@ phrases = [
     "11", "12", "13", "14", "15", "16", "17", "18", "19",
     "20", "30", "40", "50", "60", "70", "80", "90","100","1000","thousand",
     "point", "on",
-    "satellites", "fix type", "getting fix", "survey", "operating", "RTCM",
+    "satellites", "fixtype", "getting fix", "survey", "operating", "RTCM",
     "launch", "outside", "inside", "Base A", "Base B", "course", "time",
-    "starting", "error", "information", "landed", "unknown",
-    "seconds","minutes", "hours", "radio","gps","baseunit", "gu.unit","cd.unit"
+    "starting", "error", "information", "landed", "unknown","ok",
+    "seconds","minutes", "hours", "radio","gps","RTK base", "glider unit","cd.unit"
 ]
 
 outdir = "tts_wavs"

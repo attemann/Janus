@@ -1,36 +1,91 @@
 #include <RFM69.h>
+#include <RFM69registers.h>
+
+//#include <RFM69Debug.h>
 #include <SPI.h>
 
-#define NODE_ID 2  // This is the Gateway ID (receiver)
-#define NETWORK_ID 100
-#define FREQUENCY RF69_868MHZ
-#define RTCM_TX_FREQ 868100000
+#define APPNAME "Lytt 1.0"
 
-#define RFM69_CS 10
-#define RFM69_IRQ 9
-#define RFM69_IRQN digitalPinToInterrupt(RFM69_IRQ)
-#define RFM69_RST -1
+inline constexpr int8_t RFM69_MISO = 19;
+inline constexpr int8_t RFM69_MOSI = 23;
+inline constexpr int8_t RFM69_SCK = 18;
+inline constexpr int8_t RFM69_CSS = 5;
+inline constexpr int8_t RFM69_IRQ = 4;
+inline constexpr int8_t RFM69_IRQN digitalPinToInterrupt(RFM69_IRQ);
+inline constexpr int8_t RFM69_RST = -1;
 
-int PIN_SCK = 12;
-int PIN_MISO = 13;
-int PIN_MOSI = 11;
+void debugRFM69(RFM69& radio) {
+    Serial.println(F("\n--- RFM69 Debug Dump ---"));
 
+    // Operating mode
+    byte opMode = radio.readReg(REG_OPMODE);
+    Serial.printf("OpMode: 0x%02X\n", opMode);
+
+    // Frequency (in Hz)
+    uint32_t frf = ((uint32_t)radio.readReg(REG_FRFMSB) << 16) |
+        ((uint16_t)radio.readReg(REG_FRFMID) << 8) |
+        radio.readReg(REG_FRFLSB);
+    float freqHz = (float)frf * 32000000.0 / 524288.0; // FXOSC / 2^19
+    Serial.printf("Frequency: %.1f Hz\n", freqHz);
+
+    // Bitrate
+    uint16_t bitrate = ((uint16_t)radio.readReg(REG_BITRATEMSB) << 8) |
+        radio.readReg(REG_BITRATELSB);
+    float bitrateVal = 32000000.0 / bitrate;
+    Serial.printf("Bitrate: %.2f bps\n", bitrateVal);
+
+    // FSK Deviation
+    uint16_t fdev = ((uint16_t)radio.readReg(REG_FDEVMSB) << 8) |
+        radio.readReg(REG_FDEVLSB);
+    float fdevHz = (float)fdev * 32000000.0 / 524288.0;
+    Serial.printf("Freq Deviation: %.1f Hz\n", fdevHz);
+
+    // Output power
+    byte paLevel = radio.readReg(REG_PALEVEL);
+    Serial.printf("PA Level: 0x%02X (Power: %d dBm)\n", paLevel, paLevel & 0x1F);
+
+    // RSSI Threshold
+    byte rssiThresh = radio.readReg(REG_RSSITHRESH);
+    Serial.printf("RSSI Thresh: %d dB\n", -(rssiThresh / 2));
+
+    // Sync Config
+    Serial.printf("SyncConfig: 0x%02X\n", radio.readReg(REG_SYNCCONFIG));
+    Serial.printf("SyncValue1 (NetworkID): 0x%02X\n", radio.readReg(REG_SYNCVALUE1));
+
+    // Packet Config
+    Serial.printf("PacketConfig1: 0x%02X\n", radio.readReg(REG_PACKETCONFIG1));
+    Serial.printf("PacketConfig2: 0x%02X\n", radio.readReg(REG_PACKETCONFIG2));
+
+    // Node & Broadcast IDs
+    Serial.printf("NodeAddr: 0x%02X\n", radio.readReg(REG_NODEADRS));
+    Serial.printf("BroadcastAddr: 0x%02X\n", radio.readReg(REG_BROADCASTADRS));
+
+    // Version (check hardware)
+    Serial.printf("Version: 0x%02X\n", radio.readReg(REG_VERSION));
+
+    Serial.println(F("--- End of Dump ---\n"));
+}
+
+
+RFM69 radio(RFM69_CSS, RFM69_IRQ, true);
 
 #define LED_BUILTIN 2
-
-RFM69 radio(RFM69_CS, RFM69_IRQ, true);
+#define THIS 2
 
 void setup() {
+  Serial.begin(115200);
+  while (!Serial)
+    ;
+
+  Serial.print(APPNAME);
+  Serial.println(" - Starting");
 
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);  // Test LED (adjust for active-low if needed)
   delay(1000);
   digitalWrite(LED_BUILTIN, LOW);
-  Serial.begin(115200);
-  delay(10);
-  
-  // Start SPI with custom pins
-  SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, RFM69_CS);
+
+  SPI.begin(RFM69_SCK, RFM69_MISO, RFM69_MOSI, RFM69_CSS);
 
   if (RFM69_RST != -1) {
     pinMode(RFM69_RST, OUTPUT);
@@ -40,65 +95,51 @@ void setup() {
     delay(10);
   }
 
-  Serial.println("Starting RFM69 receiver...");
-
-  SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, RFM69_CS);  // SCK, MISO, MOSI, SS (NSS)
-
-  if (!radio.initialize(RF69_868MHZ, NODE_ID, NETWORK_ID)) {
+  if (!radio.initialize(RF69_868MHZ, THIS,100)) {
     Serial.println("Radio init failed");
     while (1)
       ;
   }
 
-    // Test register read:
-  byte version = radio.readReg(0x10);  // REG_VERSION
-  if (version == 0x24) {
-    Serial.println("✅ RFM69 is alive (version 0x24)");
-  } else {
-    Serial.print("❌ RFM69 not responding. Read version: 0x");
-    Serial.println(version, HEX);
-  }
-
-  //radio.writeReg(0x37, 0b00000010); // REG_PACKETCONFIG1 = 0x371
-  //radio.writeReg(0x3A, 255);  // REG_BROADCASTADRS = 0xFF
-  
-  radio.setHighPower();  // Only if IS_RFM69HCW is true
-  radio.setFrequency(RTCM_TX_FREQ);
-
-  radio.setAddress(NODE_ID);      // Re-apply address after setFrequency
-  radio.setNetwork(NETWORK_ID);   // Optional but good practice
-
+  radio.setHighPower(true);  // Only if IS_RFM69HCW is true
+  radio.setFrequency(868200000);
   radio.encrypt(NULL);  // or radio.encrypt("sampleEncryptKey");
-  Serial.println("RFM69 initialized");
+  radio.setAddress(2);
+  radio.setNetwork(100);
+      radio.writeReg(REG_SYNCVALUE1, 100);
+  delay(100);
+ debugRFM69(radio);
+
+  Serial.print(APPNAME);
+  Serial.println(" - RFM69 initialized");
+
+  debugRFM69(radio);
+
 }
 
 void loop() {
   if (radio.receiveDone()) {
     // Accept if message is for me or broadcasted
     //Serial.println("TargetId=" + String(radio.TARGETID));
-    if (radio.TARGETID == NODE_ID || radio.TARGETID == 0) {
-      Serial.print("Received from Node ");
-      Serial.print(radio.SENDERID);
-      Serial.print(" to ");
-      Serial.print(radio.TARGETID);
-      Serial.print(": [");
-      for (byte i = 0; i < radio.DATALEN; i++) {
-        Serial.print((char)radio.DATA[i]);
-      }
-      Serial.print("], RSSI: ");
-      Serial.println(radio.RSSI);
 
-      if (radio.ACKRequested()) {
-        radio.sendACK();
-        Serial.println("ACK sent");
-      }
-
-      digitalWrite(LED_BUILTIN, HIGH);
-      delay(200);
-      digitalWrite(LED_BUILTIN, LOW);
-    } else {
-      Serial.print("Ignored packet for node ");
-      Serial.println(radio.TARGETID);
+    Serial.print("Received from Node ");
+    Serial.print(radio.SENDERID);
+    Serial.print(" to ");
+    Serial.print(radio.TARGETID);
+    Serial.print(": [");
+    for (byte i = 0; i < radio.DATALEN; i++) {
+      Serial.printf("%02X ",radio.DATA[i]);
     }
+    Serial.print("], RSSI: ");
+    Serial.println(radio.RSSI);
+
+    if (radio.ACKRequested()) {
+      radio.sendACK();
+      Serial.println("ACK sent");
+    }
+
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(200);
+    digitalWrite(LED_BUILTIN, LOW);
   }
 }

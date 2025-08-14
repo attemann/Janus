@@ -46,23 +46,26 @@ public:
 
     GNSSModule(HardwareSerial& serial);
     void begin(uint32_t baud,int rx, int tx);
+	bool gpsDataAvailable();
     int detectUARTPort();
     //bool init();
     void sendCommand(const String& command);
     void sendReset();
-    bool readGNSSData(GNSSFix& fix, bool showRaw);
-    bool readFix(GNSSFix& fix);
-    bool readRTCMfromGPS(uint8_t* buffer, size_t& len);
+    bool parseGGA(const uint8_t* buf, size_t len, GNSSFix& fix);
+    bool readGPS();
+    void printAscii();
+    bool readRTCM(uint8_t* buffer, size_t& len);
+    bool readNMEA();
+    bool readCommandResponse();
     uint16_t getRTCMType(const uint8_t* buf, size_t len);
     const char* getRTCMName(uint16_t type);
     uint16_t getRTCMBits(const uint8_t* buffer, int startBit, int bitLen);
     static String fixTypeToString(int fixType);
     int parseField(const String& line, int num);
     void showFix(const GNSSFix& fix);
-    bool parseGGA(const char* line, GNSSFix& fix);
     bool isValidRTCM(const uint8_t* data, size_t len);
-
-    //const RTCMMessage& getRTCM(int index) const;
+    const uint8_t* getBuffer() const { return _gpsBuf; }
+    size_t getBufLen() const { return _gpsBufLen; }
 
     class RTCMHandler {
     public:
@@ -115,6 +118,8 @@ private:
     static constexpr int maxRTCMs = 10;
     RTCMMessage _rtcmList[maxRTCMs];
     int _rtcmCount = 0;
+    uint8_t _gpsBuf[128];
+    size_t _gpsBufLen = 0;
 };
 
 

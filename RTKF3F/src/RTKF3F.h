@@ -32,36 +32,20 @@ enum EventCode : uint8_t {
 #define THRESHOLD_AIRBORNE 9.0f  // 3 m/s avg over 3 secs
 #define THRESHOLD_LANDED 1.0f    // 1 m/s avg over 3 secs
 
-// Message codes (all unique, hex format)
-#define MSG_RTCM                0xD3  // Standard RTCM message
-#define MSG_RTCM_FRAGMENT       0x0A  // Fragmented RTCM
-#define MSG_RTCM_NUM_SENT       0x0B  // Number of RTCM sent
+const char* getMessageName(uint8_t id);
 
-#define MSG_ARENA_SETTINGS      0xA0
-#define MSG_GLIDER_SETTINGS     0xA1
-#define MSG_REQ_POS             0xA2  
-#define MSG_GU_GPS_SETTINGS     0xA3  
 
-#define MSG_INFORMATION         0xF0
-#define MSG_ERROR               0xF1
-#define MSG_SIV                 0xF2
+#define FIX_TYPE_NOFIX   0
+#define FIX_TYPE_GPS     1
+#define FIX_TYPE_DGPS    2
+#define FIX_TYPE_PPS     3
+#define FIX_TYPE_RTK_FLOAT 4
+#define FIX_TYPE_RTK_FIX 5
+#define FIX_TYPE_DEAD_RECKONING 6
+#define FIX_TYPE_MANUAL 7
+#define FIX_TYPE_SIM    8
+#define FIX_TYPE_OTHER  9
 
-#define MSG_TYPE_G2B_EVENT      0xB1
-#define MSG_TYPE_G2B_RELPOS     0xB2
-#define MSG_TYPE_G2B_MISC       0xB3
-
-// Radio errors
-#define ERROR_RADIO_INIT        0x00
-#define ERROR_RADIO_VERIFY      0x01
-
-// GNSS errors
-#define ERROR_UART              0x10
-#define ERROR_COM               0x11
-
-// Unknown error code
-#define ERROR_UNKNOWN           0x63  // 99 decimal = 0x63
-
-// INFORMATION MESSGAGE CODES
 // BASE TRANSITION CODES
 #define INFO_TRANSITION_GETTINGFIX 0x01 
 #define INFO_TRANSITION_SURVEYING  0x02
@@ -78,13 +62,6 @@ enum EventCode : uint8_t {
 #define INFO_FIX_OTHER		       0x0D
 #define INFO_DEVICE_STARTING       0x10
 
-#define FREQUENCY_RTCM 868100000 
-#define FREQUENCY_CD   868200000
-
-#define NODEID_RTKBASE   1
-#define NODEID_CD		 2
-#define NODEID_GU		 3
-#define NETWORK_ID		 100
 
 // UBX sync bytes and message details
 #define UBX_SYNC1            0xB5
@@ -108,8 +85,6 @@ enum class F3FTaskState {
 	TASK_TURN9,
 	TASK_FINISHED
 };
-
-
 
 
 // Define ANSI color codes (disable if not supported)

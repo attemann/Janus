@@ -47,7 +47,7 @@ public:
             return;
         }
         Serial.println("✅ SPIFFS mounted");
-        listSpiffsFiles();
+        //listSpiffsFiles();
 
         _audioOut = new AudioOutputI2S();
         _audioOut->SetPinout(bclk, lrclk, din);
@@ -99,15 +99,14 @@ public:
 	}
 
     void speakInfo(int infoCode) {
-        if (infoCode < 0) return;
 
         playWavFile("/information.wav");
         speakInt(infoCode);
     }
 
     void speakFix(int fix) {
-        if (fix < 0 || fix > 9) return;
-        playWavFile("/fix.wav");
+        if (fix < FIX_TYPE_NOFIX || fix > FIX_TYPE_OTHER) return;
+        playWavFile("/fixtype.wav");
         playNumberFile(fix);
 	}
 

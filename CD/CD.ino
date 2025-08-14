@@ -5,35 +5,26 @@
 */
 
 #include <Arduino.h>
+#include <SPI.h>
 #include <RFM69.h>  
 #include <RTKF3F.h>
-//#include "RadioModule.h"
+#include "RadioModule.h"
 #include <Sound.h>
 
 #define APPNAME  "CD 1.0"  
 #define MY_WAV_FILE     "/cd.unit.wav"
 
-//RADIO
-#define RFM69_IRQ       4
-#define RFM69_IRQN digitalPinToInterrupt(RFM69_IRQ)
-#define RFM69_CS        5
-#define RFM69_SCK      18
-#define RFM69_MISO     19
-#define RFM69_MOSI     23
-#define RFM69_RST      -1
+#define THIS_NODE_ID NODEID_CD
 
-RadioModule::HWPins radioPins = {
-    .sck   = RFM69_SCK,
-    .miso  = RFM69_MISO,
-    .mosi  = RFM69_MOSI,
-    .cs    = RFM69_CS,
-    .irq   = RFM69_IRQ,
-    .reset = RFM69_RST,
-    .irqn  = RFM69_IRQN
-};
+inline constexpr int8_t RFM69_MISO= 19;
+inline constexpr int8_t RFM69_MOSI= 23;
+inline constexpr int8_t RFM69_SCK = 18;
+inline constexpr int8_t RFM69_CSS =  5;
+inline constexpr int8_t RFM69_IRQ =  4;
+inline constexpr int8_t RFM69_IRQN = digitalPinToInterrupt(RFM69_IRQ);
+inline constexpr int8_t RFM69_RST = -1;
 
-RFM69 radio(radioPins.cs, radioPins.irq, true);
-RadioModule radioMod(radio);
+RadioModule radioMod(RFM69_CSS, RFM69_IRQ, true);
 DecimalSpeaker speaker;
 
 void haltUnit(String msg1, String msg2) {
@@ -50,29 +41,22 @@ void setup() {
     delay(500);
 
     Serial.printf("%s starting\r\n", APPNAME);
-    speaker.begin(1.0, 26, 22, 25);
+    speaker.begin(0.8, 26, 22, 25);
 
     speaker.playWavFile(MY_WAV_FILE);
     speaker.playWavFile("/starting.wav");   
     delay(500);
 
-
     // Radio
-    if (!radioMod.init(radioPins, NODEID_CD, NETWORK_ID, FREQUENCY_CD)) {
+    if (!radioMod.init(RFM69_MISO, RFM69_MOSI, RFM69_SCK,
+        THIS_NODE_ID, NETWORK_ID, FREQUENCY_CD)) {
+        Serial.println("Radio init failed");        
         speaker.playWavFile(MY_WAV_FILE);
         speaker.playWavFile("/radio.wav");
 		speaker.speakError(ERROR_RADIO_INIT);
         haltUnit("Radio init", "Failure, freeze");
     }
     else Serial.println("Radio init ok");
-
-    if (!radioMod.verify()) {
-        speaker.playWavFile(MY_WAV_FILE);
-        speaker.playWavFile("/radio.wav");
-        speaker.speakError(ERROR_RADIO_VERIFY);
-        haltUnit("Radio verify", "Failure, freeze");
-    }
-    else Serial.println("Radio verified");
 }
 
 
@@ -86,8 +70,9 @@ void loop() {
         if (len > 0) {
 
             senderId = radioMod.getSenderId();
-            if (senderId == NODEID_RTKBASE) originWav = "/baseunit.wav";
-            if (senderId == NODEID_GU)      originWav = "/gu.unit.wav";
+            Serial.printf("Got senderid=%d\r\n", senderId);
+            if (senderId == NODEID_RTKBASE) originWav = "/RTK_base.wav";
+            if (senderId == NODEID_GU)      originWav = "/glider_unit.wav";
 
             speaker.playWavFile(originWav);
 
