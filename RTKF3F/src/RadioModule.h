@@ -70,6 +70,7 @@ public:
     bool init(int8_t pMISO, int8_t pMOSI, int8_t pSCK,
         uint16_t nodeid, uint8_t networkid, uint32_t frequencyHz);
 	RFM69& getRadio() { return _radio; }
+    void joeSetNetwork(uint8_t networkid);
     void send(uint16_t toAddress, const void* buffer, uint8_t bufferSize, bool requestACK);
     void debugRFM69(RFM69& radio);
     void sendMessageCode(uint8_t destNode, uint32_t destFreq, uint32_t returnFreq, uint8_t msgType, uint8_t msgCode);
@@ -77,7 +78,7 @@ public:
     void sendRTCMTest(int len);
     void printRTCMSegment(const uint8_t* data, size_t len);
     void sendFragmentedRTCM(const uint8_t* data, size_t len);
-    bool receive(uint8_t* data, size_t len);
+    bool receive(uint8_t* data, size_t& len);
     bool setFrequencyBlocking(uint32_t freqHz);
     bool sendWithReturnFreq(uint8_t destNode,
         uint32_t destFreqHz,

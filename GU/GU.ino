@@ -57,16 +57,20 @@ void setup() {
         while (1);
     }
 
-	Serial.println("------------------Test 1 ---------------------");
+    Serial.println("------------------Test 1 ---------------------");
     uint8_t buf[2];
     size_t buflen = 2;
     buf[0] = MSG_INFORMATION;
-	buf[1] = INFO_DEVICE_STARTING;
-	radioMod.send(NODEID_CD, buf, buflen, true);
-    if (!radioMod.sendWithReturnFreq(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, buf, buflen)) {
-        Serial.println("sendWithReturnFreq failed");
-    }
+    buf[1] = INFO_DEVICE_STARTING;
 
+    while (true) {
+        radioMod.send(NODEID_CD, buf, buflen, true);
+        if (!radioMod.sendWithReturnFreq(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, buf, buflen)) {
+            Serial.println("sendWithReturnFreq failed");
+        }
+        delay(1000);
+    }
+    /*
 
     Serial.println("------------------Test 2 ---------------------");
 
@@ -90,6 +94,7 @@ void setup() {
 
         delay(1000);  // Wait 1 seconds
     }
+    */
 
     while (false);
 

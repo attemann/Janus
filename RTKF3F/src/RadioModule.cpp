@@ -12,6 +12,13 @@ RadioModule::RadioModule(int csPin, int irqPin, bool isHighPower)
     _radio(csPin, irqPin, isHighPower) {
 }
 
+void RadioModule::joeSetNetwork(uint8_t networkid) {
+    // Set network ID (sync value)
+    _radio.writeReg(REG_SYNCVALUE1, networkid);
+    uint8_t syncVal = _radio.readReg(REG_SYNCVALUE1);
+    Serial.printf("✅ Forced SyncValue1 to 0x%02X\n", syncVal);
+}
+
 bool RadioModule::init(int8_t pMISO, int8_t pMOSI, int8_t pSCK,
     uint16_t nodeid, uint8_t networkid, uint32_t frequencyHz)
 {
@@ -20,45 +27,27 @@ bool RadioModule::init(int8_t pMISO, int8_t pMOSI, int8_t pSCK,
     _nodeid = nodeid;
 	_networkid = networkid;
 
-    if (!_radio.initialize(RF69_868MHZ, nodeid, networkid)) {
+    if (!_radio.initialize(RF69_868MHZ, nodeid)) {
         Serial.println("RFM69 init failed");
         return false;
     }
 
-    _radio.encrypt(NULL);
-
 	Serial.printf("_isHighPower: %s\n", _isHighPower ? "true" : "false");
     _radio.setHighPower(_isHighPower);
-    Serial.printf("✅ Set power level to 31 (max)\n");
-    _radio.setPowerLevel(31);
-    Serial.printf("✅ Set frequency to %.3f MHz\n", frequencyHz / 1e6f);
     _radio.setFrequency(frequencyHz);
-
-    
+    _radio.encrypt(NULL);
     _radio.setAddress(nodeid);
-    //_radio.setNetwork(networkid);
+    joeSetNetwork(networkid);
 
-
-    _radio.writeReg(REG_SYNCVALUE1, networkid);
-    uint8_t syncVal = _radio.readReg(REG_SYNCVALUE1);
-    Serial.printf("✅ Forced SyncValue1 to 0x%02X\n", syncVal);
-
-    //_radio.setMode(RF69_MODE_RX);
-    //uint32_t t0 = millis();
-    //while (!(_radio.readReg(REG_IRQFLAGS1) & RF_IRQFLAGS1_MODEREADY)) {
-    //    if (millis() - t0 > 50) {
-    //        Serial.println("Timeout waiting for MODEREADY");
-    //        return false;
-    //    }
-    //}
-
+    _radio.setMode(RF69_MODE_STANDBY);
 
 	debugRFM69(_radio);
-	Serial.println("RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR");  
-    //Serial.println("checkRadioSettings INSIDE init");
+
     checkRadioSettings(nodeid, networkid, frequencyHz);
 
-    _radio.readAllRegs();
+	sendMessageCode(0, frequencyHz, frequencyHz, MSG_INFORMATION, INFO_DEVICE_STARTING);
+
+    while (true);
 
     uint8_t version = _radio.readReg(0x10);
     //Serial.printf("Radio version: 0x%02X (expected 0x24)\n", version);
@@ -82,10 +71,14 @@ int RadioModule::getTargetId() {
 	return _radio.TARGETID;
 }
 
-bool RadioModule::receive(uint8_t* data, size_t len) {
+bool RadioModule::receive(uint8_t* data, size_t& len) {
     if (_radio.receiveDone()) {
-        data = _radio.DATA;
-        len  = _radio.DATALEN;
+        size_t available = _radio.DATALEN;
+        if (available > len) { // Prevent buffer overflow
+            return false;
+        }
+        memcpy(data, _radio.DATA, available);
+        len = available;  // Update length by reference
         return true;
     }
     return false;
@@ -194,7 +187,7 @@ bool RadioModule::setFrequencyBlocking(uint32_t freqHz)
     waitPllLock(_radio); // don’t fail hard; just improve reliability
 
     // Caller sets final RX/TX mode; we leave radio in SYNTH (fast to switch)
-    Serial.printf("setFrequencyBlocking: target=%lu Hz, actual=%lu Hz\n",
+    Serial.printf("--- setFrequencyBlocking: target=%lu Hz, actual=%lu Hz\n",
         (unsigned long)freqHz, (unsigned long)actualHz);
     return true;
 }
@@ -210,9 +203,11 @@ bool RadioModule::sendWithReturnFreq(uint8_t destNode,
         return false;
     }
 
+    _radio.setMode(RF69_MODE_SLEEP);
+
     // Hop to TX frequency
-    Serial.printf("switch-in destNode=%d, destFreq=%.3f MHz, returnFreq=%.3f MHz\n",
-		destNode, destFreqHz / 1e6f, returnFreqHz / 1e6f);
+    Serial.printf(">>> switch-in destNode=%d, returnFreq=%.3f , destFreq=%.3f MHz MHz\n",
+		destNode, returnFreqHz / 1e6f , destFreqHz / 1e6f);
     if (!setFrequencyBlocking(destFreqHz)) return false;
 
     // Enter TX and wait ready (optional but nice)
@@ -222,16 +217,23 @@ bool RadioModule::sendWithReturnFreq(uint8_t destNode,
         return false;
     }
 
+    Serial.println();
+    for (int i = 0; i < len; ++i) {
+        Serial.printf("%02X ", msg[i]);
+	}
+    Serial.println();
+
     // Fire
+	debugRFM69(_radio);
     _radio.send(destNode, msg, len, false);
 
     // Hop back to RX frequency
-    Serial.printf("switch-out destNode=%d, destFreq=%.3f MHz, returnFreq=%.3f MHz\n",
+    Serial.printf(">>> switch-out destNode=%d, destFreq=%.3f MHz, returnFreq=%.3f MHz\n",
         destNode, destFreqHz / 1e6f, returnFreqHz / 1e6f);
         if (!setFrequencyBlocking(returnFreqHz)) return false;
 
     // Enter RX and wait ready
-    _radio.setMode(RF69_MODE_RX);
+    _radio.setMode(RF69_MODE_STANDBY);
     if (!waitModeReady(_radio)) {
         Serial.println("sendWithReturnFreq: RX mode timeout");
         return false;

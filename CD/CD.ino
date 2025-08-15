@@ -61,8 +61,8 @@ void setup() {
 
 
 void loop() {
-    uint8_t* data = nullptr;
-    uint8_t len = 0;
+    uint8_t data[64];
+    size_t len = sizeof(data);
     int senderId = 0;
     const char* originWav;
 
