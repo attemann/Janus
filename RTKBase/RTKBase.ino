@@ -10,7 +10,7 @@
 
 #define APPNAME "RTKBase 1.0"
 
-#define THIS_NODE_ID NODE_ID_RTKBASE
+#define THIS_NODE_ID NODEID_RTKBASE
 
 //RADIO
 inline constexpr int8_t  RFM69_IRQ = 4;
@@ -25,8 +25,7 @@ LCDManager screen(lcd);
 
 //TwoButtonMenu menu(lcd);
 
-RFM69 radio(RFM69_CSS, RFM69_IRQ, true);
-RadioModule radioMod(radio);
+RadioModule radioMod(RFM69_CSS, RFM69_IRQ, true);
 
 // UART
 #define GNSS_BAUD 115200
@@ -103,24 +102,12 @@ void setup() {
 
     // Radio
     // Radio
-    if (!radioMod.init(RFM69_MISO, RFM69_MOSI, RFM69_SCK, THIS_NODE_ID, NETWORK_ID, FREQUENCY_CD)) {
-        haltUnit("Radio init", "Failure, freeze");
-    } else Serial.println("Radio init ok");
-
-    if (!radioMod.verify()) {
-        haltUnit("Radio verify", "Failure, freeze");
-    } else Serial.println("Radio verified");
-
-    delay(500);
-    radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, INFO_DEVICE_STARTING);
-
-    for (uint8_t i=0;i<3;i++) {
-	    delay(1000);
-        uint8_t buf[2];
-        buf[0] = 0xC3;
-        buf[1] = i+65; 
-        radio.send(NODEID_CD, buf, 2, false);
+    if (!radioMod.init(RFM69_MISO, RFM69_MOSI, RFM69_SCK, THIS_NODE_ID, NETWORK_ID, FREQUENCY_RTCM)) {
+        Serial.println("Radio init failed");
+        while (1);
     }
+    radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, INFO_DEVICE_STARTING);
+    delay(1000);
 
     // GNSS
     gnss.begin(GNSS_BAUD, UART_RX, UART_TX);

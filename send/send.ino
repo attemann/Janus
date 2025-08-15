@@ -122,7 +122,7 @@ void setup() {
 }
 
 void loop() {
-  const char msg[] = "Hei 1,2,3";
+  const char msg[] = "Test 1,2,3";
   Serial.printf("Sending from %d to %d '", THIS, TARGET);
   Serial.print(msg);
   Serial.println("'");
@@ -131,8 +131,6 @@ void loop() {
 
   debugRFM69(radio);
   radio.send(TARGET, msg, strlen(msg), false);
-  while (true)
-    ;
 
-  delay(1000);  // Wait 3 seconds
+  delay(3000);  // Wait 3 seconds
 }

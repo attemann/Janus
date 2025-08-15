@@ -105,8 +105,6 @@ void setup() {
   //radio.writeReg(REG_SYNCVALUE1, 100);
   delay(100);
 
-  debugRFM69(radio);
-
   Serial.print(APPNAME);
   Serial.println(" - RFM69 initialized");
 }
@@ -115,6 +113,8 @@ void loop() {
   if (radio.receiveDone()) {
     // Accept if message is for me or broadcasted
     //Serial.println("TargetId=" + String(radio.TARGETID));
+
+      debugRFM69(radio);
 
     Serial.print("Received from Node ");
     Serial.print(radio.SENDERID);
