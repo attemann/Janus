@@ -57,7 +57,7 @@ void Arena::toggleABaseSide() {
 
 // Encode
 void Arena::encodeArenaSettings(uint8_t* buf, bool abaseLeft, uint16_t length, uint16_t courseDirection) {
-    buf[0] = MSG_ARENA_SETTINGS;
+    buf[0] = static_cast<uint8_t>(MessageType::MSG_ARENA_SETTINGS);
     buf[1] = abaseLeft ? 0 : 1;  // 0=left, 1=right (just flip if you prefer opposite logic)
     buf[2] = (length >> 8) & 0xFF;   // High byte
     buf[3] = length & 0xFF;          // Low byte

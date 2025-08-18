@@ -87,6 +87,21 @@ String GNSSModule::fixTypeToString(int fixType) {
     }
 }
 
+void GNSSModule::printAscii() {
+    for (size_t i = 0; i < _gpsBufLen; ++i) {
+        char c = _gpsBuf[i];
+        if (c >= 32 && c <= 126) // Printable ASCII range
+            Serial.print(c);
+        else if (c == '\r')
+            Serial.print("\\r");
+        else if (c == '\n')
+            Serial.print("\\n");
+        else
+            Serial.print('.');
+    }
+    Serial.println();
+}
+
 GNSSModule::GNSSMessage GNSSModule::readGPS() {
     GNSSMessage result;
 
@@ -94,27 +109,30 @@ GNSSModule::GNSSMessage GNSSModule::readGPS() {
     if (first < 0) return result;
 
     if (first == '$') {
-        if (readNMEA()) {
+        size_t len = 0;
+        if (readNMEA(_gpsBuf, len)) {
             result.type = GNSSMessageType::NMEA;
             result.data = _gpsBuf;
-            result.length = strlen((char*)_gpsBuf);
+            result.length = len;
             return result;
         }
     }
     else if (first == '#') {
-        if (readCommandResponse()) {
+        size_t len = 0;
+        if (readCommandResponse(_gpsBuf, len)) {
             printAscii();
             result.type = GNSSMessageType::COMMAND_RESPONSE;
             result.data = _gpsBuf;
-            result.length = strlen((char*)_gpsBuf);
+            result.length = len;
             return result;
         }
     }
     else if (first == 0xD3) {
-        if (readRTCM(_gpsBuf, _gpsBufLen)) {
+        size_t len = 0;
+        if (readRTCM(_gpsBuf, len)) {
             result.type = GNSSMessageType::RTCM;
             result.data = _gpsBuf;
-            result.length = _gpsBufLen;
+            result.length = len;
             return result;
         }
     }
@@ -137,8 +155,6 @@ GNSSModule::GNSSMessage GNSSModule::readGPS() {
                 uint8_t ckA = _serial.read();
                 uint8_t ckB = _serial.read();
 
-                // TODO: optionally verify checksum
-
                 result.type = GNSSMessageType::UBX;
                 result.data = _gpsBuf;
                 result.length = len + 2;
@@ -160,25 +176,10 @@ GNSSModule::GNSSMessage GNSSModule::readGPS() {
         _serial.read();  // consume unknown byte
     }
 
-    return result;  // .type == NONE
+    return result;
 }
 
-void GNSSModule::printAscii() {
-    for (size_t i = 0; i < _gpsBufLen; ++i) {
-        char c = _gpsBuf[i];
-        if (c >= 32 && c <= 126) // Printable ASCII range
-            Serial.print(c);
-        else if (c == '\r')
-            Serial.print("\\r");
-        else if (c == '\n')
-            Serial.print("\\n");
-        else
-            Serial.print('.');
-    }
-    Serial.println();
-}
-
-bool GNSSModule::readNMEA() {
+bool GNSSModule::readNMEA(uint8_t* buffer, size_t& len) {
     static uint8_t nmeaBuf[128];
     static size_t nmeaPos = 0;
     static bool inSentence = false;
@@ -198,17 +199,15 @@ bool GNSSModule::readNMEA() {
                 nmeaBuf[nmeaPos++] = c;
             }
             else {
-                // Overflow, reset and wait for next sentence
                 inSentence = false;
                 nmeaPos = 0;
                 continue;
             }
             if (c == '\n') {
-                nmeaBuf[nmeaPos] = '\0'; // null-terminate
-                // Save to class properties:
-                memcpy(_gpsBuf, nmeaBuf, nmeaPos + 1);
-                _gpsBufLen = nmeaPos;
-                inSentence = false; // Ready for next one
+                nmeaBuf[nmeaPos] = '\0';
+                memcpy(buffer, nmeaBuf, nmeaPos + 1);
+                len = nmeaPos;
+                inSentence = false;
                 return true;
             }
         }
@@ -216,38 +215,35 @@ bool GNSSModule::readNMEA() {
     return false;
 }
 
-bool GNSSModule::readCommandResponse() {
+bool GNSSModule::readCommandResponse(uint8_t* buffer, size_t& len) {
     size_t idx = 0;
     while (_serial.available()) {
         char c = _serial.read();
-        if (idx < 127) { // leave room for null terminator
-            _gpsBuf[idx++] = c;
+        if (idx < 127) {
+            buffer[idx++] = c;
         }
-        if (c == '\n' || idx >= 127) { // End of response or buffer full
-            _gpsBufLen = idx;
-            _gpsBuf[idx] = '\0'; // Null-terminate (safe for printing)
-            // Optionally strip trailing '\r'
-            if (idx >= 2 && _gpsBuf[idx - 2] == '\r') {
-                _gpsBuf[idx - 2] = '\n';
-                _gpsBuf[idx - 1] = '\0';
-                idx--;
+        if (c == '\n' || idx >= 127) {
+            buffer[idx] = '\0';
+            len = idx;
+            if (idx >= 2 && buffer[idx - 2] == '\r') {
+                buffer[idx - 2] = '\n';
+                buffer[idx - 1] = '\0';
+                len--;
             }
             return true;
         }
     }
-    _gpsBufLen = idx;
+    len = idx;
     return false;
 }
 
 bool GNSSModule::readRTCM(uint8_t* buffer, size_t& len) {
-    const unsigned long timeout = 100;  // milliseconds
+    const unsigned long timeout = 100;
     unsigned long startTime;
 
     while (_serial.available()) {
-        // Look for 0xD3 sync byte
         if (_serial.read() != 0xD3) continue;
 
-        // Wait for length bytes
         startTime = millis();
         while (_serial.available() < 2) {
             if (millis() - startTime > timeout) return false;
@@ -256,18 +252,15 @@ bool GNSSModule::readRTCM(uint8_t* buffer, size_t& len) {
         uint8_t lenL = _serial.read();
         uint16_t payloadLen = ((lenH & 0x03) << 8) | lenL;
 
-        // Reject oversized messages
         if (payloadLen > 1023) return false;
 
-        size_t totalLen = 3 + payloadLen + 3;  // header + payload + CRC
+        size_t totalLen = 3 + payloadLen + 3;
 
-        // Wait for full message
         startTime = millis();
         while (_serial.available() < payloadLen + 3) {
             if (millis() - startTime > timeout) return false;
         }
 
-        // Fill buffer
         buffer[0] = 0xD3;
         buffer[1] = lenH;
         buffer[2] = lenL;

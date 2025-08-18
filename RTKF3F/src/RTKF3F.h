@@ -2,39 +2,15 @@
 
 #pragma once
 
+#include "Const.h"  
+#include "MessageTypes.h"
 #include "GNSSModule.h"
 #include "RadioModule.h"
 #include "ConfigMgr.h"
-
-// === Event codes (Bits 7–4 of Byte 1) ===
-// Events sent from Glider Unit (GU) to Base Station (BS)
-enum EventCode : uint8_t {
-    EVT_NONE = 0x0,  // Reserved / no event
-    EVT_CROSS_A_IN = 0x1,  // Cross A base into task
-    EVT_CROSS_A_OUT = 0x2,  // Cross A base out of task
-    EVT_CROSS_B_IN = 0x3,  // Cross B base into task
-    EVT_CROSS_B_OUT = 0x4,  // Cross B base out of task
-    EVT_SAFETY_IN_TO = 0x5,  // Cross into safety area (danger zone)
-    EVT_SAFETY_OUT_OF = 0x6,  // Cross out of safety area (safe zone)
-    EVT_AIRBORNE = 0x7,  // Glider airborne (takeoff)
-    EVT_LANDED = 0x8,  // Glider landed
-    EVT_ACK = 0x9,  // Acknowledgment of flight settings
-};
-
 #include "Arena.h"
 #include "Glider.h"
 
-#define MAX_GU_UNITS 5
-#define SLOPELENGTH 100
-#define SURVEYINTIME 10000
-
-// Const for airborne detection
-#define DETECTOR_BUFFER_SIZE 30  // 3 secs with 0.1s interval
-#define THRESHOLD_AIRBORNE 9.0f  // 3 m/s avg over 3 secs
-#define THRESHOLD_LANDED 1.0f    // 1 m/s avg over 3 secs
-
-const char* getMessageName(uint8_t id);
-
+const char* getMessageName(MessageType type);
 
 #define FIX_TYPE_NOFIX   0
 #define FIX_TYPE_GPS     1
@@ -113,21 +89,27 @@ inline uint8_t encodeHeader(uint8_t msgType, uint8_t gliderId) {
     return ((msgType & 0x03) << 6) | (gliderId & 0x3F);
 }
 
-inline void encodeEventMessage(uint8_t* msg, uint8_t gliderId, uint8_t event, uint8_t status) {
-    msg[0] = encodeHeader(MSG_TYPE_G2B_EVENT, gliderId);
+inline void encodeEventMessage(uint8_t* msg, uint8_t gliderId, MessageType event, uint8_t status) {
+    msg[0] = static_cast<uint8_t>(event) | (gliderId & 0x0F);
     msg[1] = (event << 4) | (status & 0x0F);
     for (int i = 2; i < 6; ++i) msg[i] = 0;  // Reserved
 }
 
-inline void decodeEventMessage(const uint8_t* msg, uint8_t& gliderId, uint8_t& event, uint8_t& status) {
+inline void decodeEventMessage(const uint8_t* msg, uint8_t& gliderId, MessageType &event, uint8_t& status) {
     gliderId = decodeGliderId(msg[0]);
-    event = (msg[1] >> 4) & 0x0F;
+    event = static_cast<MessageType>((msg[1] >> 4) & 0x0F);
     status = msg[1] & 0x0F;
 }
 
 inline void encodeRelPosMessage(uint8_t* msg, uint8_t gliderId, int16_t n, int16_t e, int16_t d, uint8_t status) {
-    msg[0] = encodeHeader(MSG_TYPE_G2B_RELPOS, gliderId);
-    uint32_t packed = ((n & 0x3FF) << 20) | ((e & 0x3FF) << 10) | (d & 0x3FF);
+    if (!msg) return; // Safety check for null buffer
+
+    msg[0] = static_cast<uint8_t>(MessageType::MSG_G2B_RELPOS) | (gliderId & 0x0F);
+
+    const uint32_t packed = ((static_cast<uint32_t>(n & 0x3FF) << 20) |
+        (static_cast<uint32_t>(e & 0x3FF) << 10) |
+        (static_cast<uint32_t>(d & 0x3FF)));
+
     msg[1] = (packed >> 24) & 0xFF;
     msg[2] = (packed >> 16) & 0xFF;
     msg[3] = (packed >> 8) & 0xFF;
@@ -147,9 +129,16 @@ inline void decodeRelPos(const uint8_t* msg, int16_t& n, int16_t& e, int16_t& d)
 }
 
 inline void encodeMiscMessage(uint8_t* msg, uint8_t gliderId, uint8_t d) {
-    msg[0] = encodeHeader(MSG_TYPE_G2B_MISC, gliderId);
+    if (!msg) return; // Safety check for null buffer
+
+    // Encode header with message type and glider ID
+    msg[0] = static_cast<uint8_t>(MessageType::MSG_G2B_MISC) | (gliderId & 0x0F);
+
+    // Store 4-bit data value
     msg[1] = d & 0x0F;
-    for (int i = 2; i < 6; ++i) msg[i] = 0;
+
+    // Zero out reserved bytes
+    memset(&msg[2], 0, 4);
 }
 
 inline uint8_t decodeMiscMessage(const uint8_t* msg, uint8_t& gliderId, uint8_t& d) {

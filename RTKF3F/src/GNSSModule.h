@@ -71,9 +71,11 @@ public:
     void sendReset();
     bool parseGGA(const uint8_t* buf, size_t len, GNSSFix& fix);
     void printAscii();
+
+    bool readNMEA(uint8_t* buffer, size_t& len);
+    bool readCommandResponse(uint8_t* buffer, size_t& len);
     bool readRTCM(uint8_t* buffer, size_t& len);
-    bool readNMEA();
-    bool readCommandResponse();
+
     uint16_t getRTCMType(const uint8_t* buf, size_t len);
     const char* getRTCMName(uint16_t type);
     uint16_t getRTCMBits(const uint8_t* buffer, int startBit, int bitLen);

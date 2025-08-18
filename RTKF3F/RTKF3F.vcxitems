@@ -22,6 +22,7 @@
     <!-- <ClInclude Include="$(MSBuildThisFileDirectory)RTKF3F.h" /> -->
     <ClCompile Include="$(MSBuildThisFileDirectory)src\Arena.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\ConfigMgr.cpp" />
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\Const.h" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\Glider.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\GNSSModule.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)src\RadioModule.cpp" />
@@ -32,6 +33,7 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)src\ConfigMgr.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\Glider.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\GNSSModule.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\MessageTypes.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\RadioModule.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\RTKF3F.h" />
   </ItemGroup>
