@@ -41,7 +41,7 @@ void setup() {
     delay(500);
 
     Serial.printf("%s starting\r\n", APPNAME);
-    speaker.begin(0.8, 26, 22, 25);
+    speaker.begin(0.2, 26, 22, 25);
 
     speaker.playWavFile(MY_WAV_FILE);
     speaker.playWavFile("/starting.wav");   

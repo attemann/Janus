@@ -194,11 +194,7 @@ bool RadioModule::sendWithReturnFreq(uint8_t destNode,
         return false;
     }
 
-    // Dump payload hex
-    //for (uint8_t i = 0; i < len; ++i) Serial.printf("%02X ", msg[i]);
-    //Serial.println();
-
-    debugRFM69(_radio);
+    //debugRFM69(_radio);
     _radio.send(destNode, msg, len, false);
     (void)waitPacketSent(_radio, 1000);
 

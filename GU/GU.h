@@ -15,6 +15,7 @@ void showMenu() {
 	Serial.println("Type your command and press Enter:");
 }
 
+
 void handleConsoleCommand(String cmd) {
     cmd.trim();  // Fjern mellomrom og linjeskift
 

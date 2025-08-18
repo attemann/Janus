@@ -23,7 +23,7 @@ inline constexpr int8_t  RFM69_RST = -1;
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 LCDManager screen(lcd);
 
-//TwoButtonMenu menu(lcd);
+ConfigManager config(APPNAME);  // NVS namespace
 
 RadioModule radioMod(RFM69_CSS, RFM69_IRQ, true);
 
@@ -62,7 +62,7 @@ void haltUnit(String msg1, String msg2) {
     screen.setLine(0, msg1);
     screen.setLine(1, msg2);
     delay(1000);
-    while (true);
+    //while (true);
 }
 
 // Called from loop() when state == Operating
@@ -95,12 +95,28 @@ void setup() {
     delay(500);
     Serial.printf("%s booting\r\n", APPNAME);
 
+    //////////////////////////////////////
+    // Start NVS
+    if (!config.begin()) {
+        Serial.println("❌ Kunne ikke starte NVS-lagring");
+        return;
+    }
+
+    // Start admin-WiFi uten passord
+    AdminOpts opts;
+    opts.ssid = "";             // lar den generere f.eks. "JanusAB12"
+    opts.password = "";         // ⚠️ ingen passord => åpent nett
+    opts.windowMs = 120000;     // varighet: 2 minutter
+    config.startAdminWindow(opts);
+
+    Serial.println("🟢 Admin-modus aktivert, åpen WiFi");
+    //////////////////////////////////////
+
     // User interface
     screen.begin();
     screen.setLine(0, APPNAME);
     screen.setLine(1, "");
 
-    // Radio
     // Radio
     if (!radioMod.init(RFM69_MISO, RFM69_MOSI, RFM69_SCK, THIS_NODE_ID, NETWORK_ID, FREQUENCY_RTCM)) {
         Serial.println("Radio init failed");
@@ -124,6 +140,10 @@ void setup() {
 
 void loop() {
 
+    config.loop();
+
+    GNSSModule::GNSSMessage gnssData = gnss.readGPS();
+
     switch (deviceState) {
     case DEVICESTATE::DEVICE_STARTING: {
 
@@ -135,48 +155,45 @@ void loop() {
         deviceState = DEVICESTATE::DEVICE_GETTINGFIX;
 		radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, INFO_TRANSITION_GETTINGFIX);
         delay(1000);
-        //while (1);
         break;
     }
     case DEVICESTATE::DEVICE_GETTINGFIX: {
 
-        String line = SerialGNSS.readStringUntil('\n');
-        line.trim();
+        if (gnssData.type == GNSSModule::GNSSMessageType::NMEA) {
 
-        if (!line.startsWith("$GNGGA")) {
-            //Serial.print("Awaiting $GNGGA");
-			//Serial.println(line);   
-            screen.setLine(0, "Awaiting $GNGGA");
-            screen.setLine(1, line);
-        } else {
+            GNSSModule::GNSSFix fix;
 
-			//gnss.parseGGA(line.c_str(), fix);
+            if (gnssData.length > 6 && memcmp(gnssData.data, "$GNGGA", 6) == 0) {
+                if (gnss.parseGGA(gnssData.data, gnssData.length, fix)) {
+                    screen.setLine(0, "GGA OK");
+                    screen.setLine(1, String(fix.lat, 6) + "," + String(fix.lon, 6));
+                }
+                else {
+                    screen.setLine(0, "GGA Parse fail");
+                }
+            }
+            else {
+                screen.setLine(0, "Waiting GGA...");
+                screen.setLine(1, String((const char*)gnssData.data));
+            }
 
-            screen.setLine(0, String(fix.fixType) + ":" + gnss.fixTypeToString(fix.fixType));
-            screen.setLine(1, "SIV: " + String(fix.SIV));
+            if (fix.fixType > 0) {
+                gnss.showFix(fix);
 
-            if (millis() - timeLastSpeak > DELAYBETWEENSPEAK) {
-				radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_SIV, fix.SIV);
-                timeLastSpeak = millis();
-			}
-
-            //Serial.println(line);
-            gnss.showFix(fix);
-
-            if (fix.fixType == FIX_TYPE_GPS) {
-                delay(1000);
-                radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, INFO_TRANSITION_SURVEYING);
-                timeSurveyStart = millis();
-				gnss.sendCommand("unlog\r\n");
-                gnss.sendCommand("mode base time " + String(SURVEYINTIME/1000, 0) + " com2\r\n");
-                gnss.sendCommand("saveconfig\r\n");
-
-				timeSurveyStart = millis();
-                deviceState = DEVICESTATE::DEVICE_SURVEYING;
+                if (fix.fixType == FIX_TYPE_GPS) {
+                    delay(1000);
+                    radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, INFO_TRANSITION_SURVEYING);
+                    timeSurveyStart = millis();
+                    gnss.sendCommand("unlog\r\n");
+                    gnss.sendCommand("mode base time 15\r\n");
+                    gnss.sendCommand("saveconfig\r\n");
+                    deviceState = DEVICESTATE::DEVICE_SURVEYING;
+                }
             }
         }
         break;
     }
+
     case DEVICESTATE::DEVICE_SURVEYING: {
         unsigned long elapsed = millis() - timeSurveyStart;
         if (elapsed < SURVEYINTIME) {
@@ -194,8 +211,6 @@ void loop() {
             gnss.sendCommand("config pvtalg multi\r\n");
             gnss.sendCommand("saveconfig\r\n");
             gnss.rtcmHandler.printList(true);
-            //Serial.println("BASE_SURVEYING: RTCM config done, entering OPERATING mode.");
-
             radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_CD, MSG_INFORMATION, INFO_TRANSITION_OPERATING);
             delay(500);
 
@@ -203,31 +218,33 @@ void loop() {
         }
         break;
     }
+
     case DEVICESTATE::DEVICE_OPERATING: {
-        uint8_t rtcmBuf[1024];
-        size_t len = 0;
 
-        //if (gnss.readGPS(rtcmBuf, len)) {
-        if (gnss.readGPS()) {
-            if (len > 0) {
+        if (gnssData.type == GNSSModule::GNSSMessageType::RTCM) {
 
-				uint16_t type = gnss.getRTCMType(rtcmBuf, len);
-				bool isValid = gnss.isValidRTCM(rtcmBuf, len);
-				bool isFragmented = len > RadioModule::RTCM_Fragmenter::MAX_PAYLOAD;
+            if (gnss.isValidRTCM(gnssData.data, gnssData.length)) {
 
-				uint16_t count = gnss.rtcmHandler.messages[gnss.rtcmHandler.findById(type)].txCount;
-				Serial.printf("Sending [" ANSI_GREEN "RTCM%d" ANSI_RESET "] %s %s" ANSI_GREEN " Count: %d" ANSI_RESET " Len: %d\r\n",
-                    type,
-                    isValid ? "Valid" : "Invalid",
+                radioMod.sendRTCM(gnssData.data, gnssData.length);
+
+                uint16_t rtcmtype = gnss.getRTCMType(gnssData.data, gnssData.length);
+                gnss.rtcmHandler.incrementSentCount(rtcmtype);
+
+                updateRTCMTypeCountDisplay();
+
+                bool isFragmented = gnssData.length > RadioModule::RTCM_Fragmenter::MAX_PAYLOAD;
+                uint16_t count = gnss.rtcmHandler.messages[gnss.rtcmHandler.findById(rtcmtype)].txCount;
+                Serial.printf("Sending [" ANSI_GREEN "RTCM%d" ANSI_RESET "] %s" ANSI_GREEN " Count: %d" ANSI_RESET " Len: %d\r\n",
+                    rtcmtype,
                     isFragmented ? "Fragments" : "Single",
-                    count,len);
+                    count, gnssData.length);
 
-                gnss.rtcmHandler.incrementSentCount(type);
-
-                radioMod.sendRTCM(rtcmBuf, len);
             }
-        }
-        updateRTCMTypeCountDisplay();
+            else {
+                Serial.println("RTCM: Invalid data received");
+            }
+		}
+		else Serial.println("RTCM: Not RTCM data");
         break;
     }
     default:

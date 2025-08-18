@@ -6,7 +6,6 @@
 
 #include "GNSSModule.h"
 
-
 GNSSModule::GNSSModule(HardwareSerial& serial)
     : _serial(serial), _nmeaIdx(0), rtcmHandler(this) {
 }
@@ -88,32 +87,80 @@ String GNSSModule::fixTypeToString(int fixType) {
     }
 }
 
-bool GNSSModule::readGPS() {
+GNSSModule::GNSSMessage GNSSModule::readGPS() {
+    GNSSMessage result;
 
     int first = _serial.peek();
+    if (first < 0) return result;
+
     if (first == '$') {
-        Serial.println("GNSS: Reading NMEA message");
         if (readNMEA()) {
-            Serial.println("GU:Received NMEA message:");
-            return true;
+            result.type = GNSSMessageType::NMEA;
+            result.data = _gpsBuf;
+            result.length = strlen((char*)_gpsBuf);
+            return result;
         }
     }
     else if (first == '#') {
-        Serial.println("GNSS: Reading CommandResponse");
         if (readCommandResponse()) {
             printAscii();
-            return true;
+            result.type = GNSSMessageType::COMMAND_RESPONSE;
+            result.data = _gpsBuf;
+            result.length = strlen((char*)_gpsBuf);
+            return result;
         }
     }
     else if (first == 0xD3) {
-        Serial.println("GNSS: Reading RTCM message");
-        return readRTCM(_gpsBuf, _gpsBufLen);
+        if (readRTCM(_gpsBuf, _gpsBufLen)) {
+            result.type = GNSSMessageType::RTCM;
+            result.data = _gpsBuf;
+            result.length = _gpsBufLen;
+            return result;
+        }
+    }
+    else if (first == 0xB5) {
+        if (_serial.available() >= 2) {
+            int sync1 = _serial.read();
+            int sync2 = _serial.read();
+            if (sync1 == 0xB5 && sync2 == 0x62) {
+                while (_serial.available() < 4);
+                uint8_t cls = _serial.read();
+                uint8_t id = _serial.read();
+                uint16_t len = _serial.read() | (_serial.read() << 8);
+
+                if (len > sizeof(_gpsBuf) - 8) return result;
+
+                _gpsBuf[0] = cls;
+                _gpsBuf[1] = id;
+                for (int i = 0; i < len; ++i)
+                    _gpsBuf[2 + i] = _serial.read();
+                uint8_t ckA = _serial.read();
+                uint8_t ckB = _serial.read();
+
+                // TODO: optionally verify checksum
+
+                result.type = GNSSMessageType::UBX;
+                result.data = _gpsBuf;
+                result.length = len + 2;
+
+                if (cls == 0x01 && id == 0x3C)
+                    result.type = GNSSMessageType::UBX_RELPOSNED;
+                else if (cls == 0x01 && id == 0x07)
+                    result.type = GNSSMessageType::UBX_NAV_PVT;
+                else if (cls == 0x05 && id == 0x01)
+                    result.type = GNSSMessageType::UBX_ACK_ACK;
+                else if (cls == 0x05 && id == 0x00)
+                    result.type = GNSSMessageType::UBX_ACK_NAK;
+
+                return result;
+            }
+        }
     }
     else {
-        // Unrecognized byte, consume and continue searching for start byte
-        _serial.read();
+        _serial.read();  // consume unknown byte
     }
-    return false; // No valid message found
+
+    return result;  // .type == NONE
 }
 
 void GNSSModule::printAscii() {

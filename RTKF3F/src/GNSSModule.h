@@ -7,6 +7,25 @@
 
 class GNSSModule {
 public:
+
+    enum class GNSSMessageType {
+        NONE,
+        NMEA,
+        RTCM,
+        COMMAND_RESPONSE,
+        UBX,
+        UBX_RELPOSNED,
+        UBX_NAV_PVT,
+        UBX_ACK_ACK,
+        UBX_ACK_NAK
+    };
+
+    struct GNSSMessage {
+        GNSSMessageType type = GNSSMessageType::NONE;
+        const uint8_t* data = nullptr;
+        size_t length = 0;
+    };
+
     struct GNSSFix {
         // UTC time
         int hour = 0;
@@ -48,11 +67,9 @@ public:
     void begin(uint32_t baud,int rx, int tx);
 	bool gpsDataAvailable();
     int detectUARTPort();
-    //bool init();
     void sendCommand(const String& command);
     void sendReset();
     bool parseGGA(const uint8_t* buf, size_t len, GNSSFix& fix);
-    bool readGPS();
     void printAscii();
     bool readRTCM(uint8_t* buffer, size_t& len);
     bool readNMEA();
@@ -66,6 +83,7 @@ public:
     bool isValidRTCM(const uint8_t* data, size_t len);
     const uint8_t* getBuffer() const { return _gpsBuf; }
     size_t getBufLen() const { return _gpsBufLen; }
+    GNSSMessage readGPS();
 
     class RTCMHandler {
     public:

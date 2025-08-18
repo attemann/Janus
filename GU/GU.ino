@@ -7,56 +7,7 @@
 
 #define APPNAME "GU 1.0"
 
-#define THIS_NODE_ID NODEID_GU
-
-void debugRFM69(RFM69& radio) {
-    Serial.println(F("\n--- RFM69 Debug Dump ---"));
-
-    // Operating mode
-    byte opMode = radio.readReg(REG_OPMODE);
-    Serial.printf("OpMode: 0x%02X\n", opMode);
-
-    // Frequency (in Hz)
-    uint32_t frf = ((uint32_t)radio.readReg(REG_FRFMSB) << 16) | ((uint16_t)radio.readReg(REG_FRFMID) << 8) | radio.readReg(REG_FRFLSB);
-    float freqHz = (float)frf * 32000000.0 / 524288.0;  // FXOSC / 2^19
-    Serial.printf("Frequency: %.1f Hz\n", freqHz);
-
-    // Bitrate
-    uint16_t bitrate = ((uint16_t)radio.readReg(REG_BITRATEMSB) << 8) | radio.readReg(REG_BITRATELSB);
-    float bitrateVal = 32000000.0 / bitrate;
-    Serial.printf("Bitrate: %.2f bps\n", bitrateVal);
-
-    // FSK Deviation
-    uint16_t fdev = ((uint16_t)radio.readReg(REG_FDEVMSB) << 8) | radio.readReg(REG_FDEVLSB);
-    float fdevHz = (float)fdev * 32000000.0 / 524288.0;
-    Serial.printf("Freq Deviation: %.1f Hz\n", fdevHz);
-
-    // Output power
-    byte paLevel = radio.readReg(REG_PALEVEL);
-    Serial.printf("PA Level: 0x%02X (Power: %d dBm)\n", paLevel, paLevel & 0x1F);
-
-    // RSSI Threshold
-    byte rssiThresh = radio.readReg(REG_RSSITHRESH);
-    Serial.printf("RSSI Thresh: %d dB\n", -(rssiThresh / 2));
-
-    // Sync Config
-    Serial.printf("SyncConfig: 0x%02X\n", radio.readReg(REG_SYNCCONFIG));
-    Serial.printf("SyncValue1 (NetworkID): 0x%02X\n", radio.readReg(REG_SYNCVALUE1));
-
-    // Packet Config
-    Serial.printf("PacketConfig1: 0x%02X\n", radio.readReg(REG_PACKETCONFIG1));
-    Serial.printf("PacketConfig2: 0x%02X\n", radio.readReg(REG_PACKETCONFIG2));
-
-    // Node & Broadcast IDs
-    Serial.printf("NodeAddr: 0x%02X\n", radio.readReg(REG_NODEADRS));
-    Serial.printf("BroadcastAddr: 0x%02X\n", radio.readReg(REG_BROADCASTADRS));
-
-    // Version (check hardware)
-    Serial.printf("Version: 0x%02X\n", radio.readReg(REG_VERSION));
-
-    Serial.println(F("--- End of Dump ---\n"));
-}
-
+#define THIS_NODEID NODEID_GU
 
 // Radio
 inline constexpr int8_t RFM69_MISO = 20;
@@ -101,7 +52,7 @@ void setup() {
 
     ////////////////////////////////////
 
-    if (!radioMod.init(RFM69_MISO, RFM69_MOSI, RFM69_SCK, THIS_NODE_ID, NETWORK_ID, FREQUENCY_RTCM)) {
+    if (!radioMod.init(RFM69_MISO, RFM69_MOSI, RFM69_SCK, THIS_NODEID, NETWORK_ID, FREQUENCY_RTCM)) {
         Serial.println("Radio init failed");
         while (1);
     }
@@ -113,7 +64,7 @@ void setup() {
 
     if (gnss.detectUARTPort() == 0) {
         haltUnit("Gnss port", "Failure, freeze");
-        radioMod.sendMessageCode(0, FREQUENCY_CD, FREQUENCY_RTCM, MSG_ERROR, ERROR_COM);
+        radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_ERROR, ERROR_COM);
     }
     else Serial.println("Gnss port ok");
 
@@ -133,9 +84,10 @@ void loop() {
     if (gnss.gpsDataAvailable()) {
 		//gpsBuf = gnss.readGPS();    
         const uint8_t* buf = gnss.getBuffer();
-        size_t len = gnss.getBufLen();
+        size_t len = sizeof(buf);
 		switch (buf[0]) {
             case 0: // No data received
+				Serial.println("GU:No data received from GNSS");    
                 break;
             case '$': // NMEA message
                 Serial.println("GU:Received NMEA message:");
@@ -148,12 +100,15 @@ void loop() {
                     }
                 break;
             case '!': // UBX message
+				Serial.println("GU:Received UBX message:");
                 SerialGNSS.write(buf, len);
                 SerialGNSS.flush();
                 break;
             case '#': // Command response
+				Serial.println("GU:Received command response:");
                 break;
             case 0xB5: // UBX message
+				Serial.println("GU:Received UBX message:");
                 SerialGNSS.write(buf, len);
                 SerialGNSS.flush();
                 break;
@@ -183,24 +138,11 @@ void loop() {
            case MSG_RTCM_FRAGMENT:   
                reassembler.acceptFragment(radioBuf, radioLen);
 
-			   //radioMod.printRTCMSegment(radioBuf, radioLen);
                if (reassembler.isComplete()) {
                    //Serial.printf("GU:MSG_RTCM_FRAGMENT complete, %u fragments received\n", reassembler.getReceivedCount());
 
                    const uint8_t* rtcm = reassembler.getData();
                    size_t rtcmLen = reassembler.getLength();
-
-                   //for (size_t i = 0; i < rtcmLen; ++i) {
-                   //    Serial.printf("%02X ", rtcm[i]);
-                   //    if ((i + 1) % 16 == 0) Serial.println();
-                   //}
-
-                   // Strong debug: show length, expected from header
-                   //uint16_t headerPayloadLen = ((rtcm[1] & 0x3F) << 8) | rtcm[2];
-                   //Serial.printf("  Buffer length: %u\n", (unsigned)rtcmLen);
-                   //Serial.printf("  RTCM header payload length: %u\n", headerPayloadLen);
-                   //Serial.printf("  Total RTCM expected length (header+payload+CRC): %u\n", (unsigned)(3 + headerPayloadLen + 3));
-                   //Serial.printf("  First byte: 0x%02X\n", rtcm[0]);
 
                    if (gnss.isValidRTCM(rtcm, rtcmLen)) {
                        Serial.println("GU:MSG_RTCM_FRAGMENT " ANSI_GREEN "Valid" ANSI_RESET);

@@ -4,6 +4,7 @@
 
 #include "GNSSModule.h"
 #include "RadioModule.h"
+#include "ConfigMgr.h"
 
 // === Event codes (Bits 7–4 of Byte 1) ===
 // Events sent from Glider Unit (GU) to Base Station (BS)
