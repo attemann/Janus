@@ -16,6 +16,7 @@ enum  MessageType : uint8_t {
     MSG_INFORMATION = 0xF0,       // General information
     MSG_ERROR = 0xF1,             // Error message
     MSG_SIV = 0xF2,               // Satellites in view
+	MSG_SURVEYING = 0xF3,         // Surveying status
     MSG_G2B_EVENT = 0xB1,         // Glider-to-base event
     MSG_G2B_RELPOS = 0xB2,        // Glider-to-base relative position
     MSG_G2B_MISC = 0xB3           // Miscellaneous Glider-to-base

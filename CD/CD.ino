@@ -132,6 +132,14 @@ void loop() {
                 speaker.playNumberFile(data[1]);
                 speaker.playWavFile("/satellites.wav");
                 break;
+
+            case MSG_SURVEYING:
+                Serial.printf("MSG_SURVEYING         [%02X] from %d\n", data[1], senderId);
+                speaker.playWavFile("/survey.wav");
+                speaker.playNumberFile(data[1]);
+                speaker.playWavFile("/seconds.wav");
+                break;
+
             default:
                 Serial.printf("Unknown message [%02X] from %d\n", data[1], senderId);
                 speaker.speakError(ERROR_UNKNOWN);

@@ -59,5 +59,8 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)src\MessageTypes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\_macros.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

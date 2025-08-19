@@ -36,5 +36,6 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)src\MessageTypes.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\RadioModule.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)src\RTKF3F.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\_macros.h" />
   </ItemGroup>
 </Project>

@@ -4,6 +4,7 @@
 #include <HardwareSerial.h>  
 
 #define COMMANDDELAY 100
+#define RESETDELAY 5000
 
 class GNSSModule {
 public:
@@ -69,7 +70,7 @@ public:
     int detectUARTPort();
     void sendCommand(const String& command);
     void sendReset();
-    bool parseGGA(const uint8_t* buf, size_t len, GNSSFix& fix);
+    bool parseGGA(const uint8_t* buf, size_t len, GNSSFix& fi);
     void printAscii();
 
     bool readNMEA(uint8_t* buffer, size_t& len);
@@ -80,7 +81,6 @@ public:
     const char* getRTCMName(uint16_t type);
     uint16_t getRTCMBits(const uint8_t* buffer, int startBit, int bitLen);
     static String fixTypeToString(int fixType);
-    int parseField(const String& line, int num);
     void showFix(const GNSSFix& fix);
     bool isValidRTCM(const uint8_t* data, size_t len);
     const uint8_t* getBuffer() const { return _gpsBuf; }
@@ -138,7 +138,7 @@ private:
     static constexpr int maxRTCMs = 10;
     RTCMMessage _rtcmList[maxRTCMs];
     int _rtcmCount = 0;
-    uint8_t _gpsBuf[128];
+    uint8_t _gpsBuf[1024];
     size_t _gpsBufLen = 0;
 };
 

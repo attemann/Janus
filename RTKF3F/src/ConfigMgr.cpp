@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <vector>
+#include "_macros.h"
 
 using std::vector;
 
@@ -127,7 +128,7 @@ void ConfigManager::startAdminWindow(const AdminOpts& opts) {
         uint8_t mac[6];
         WiFi.macAddress(mac);
         char buf[24];
-        snprintf(buf, sizeof(buf), "Janus%02X%02X", mac[4], mac[5]);
+        snprintf(buf, sizeof(buf), "Janus_%02X%02X", mac[4], mac[5]);
         _ssid = buf;
     }
 
@@ -147,7 +148,7 @@ void ConfigManager::startAdminWindow(const AdminOpts& opts) {
     _adminEndMs = millis() + dur;
     _adminActive = true;
 
-    Serial.printf("🔧 Admin-AP '%s' %s. IP: %s  (slår seg av om %u s)\n",
+    WDBG_PRINTF("🔧 Admin-AP '%s' %s. IP: %s  (slår seg av om %u s)\n",
         _ssid.c_str(),
         _pwd.length() >= 8 ? "(med passord)" : "(åpen)",
         _apIP.toString().c_str(), dur / 1000);
@@ -162,7 +163,7 @@ void ConfigManager::stopAdmin() {
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_OFF);
     _adminActive = false;
-    Serial.println("🔒 Admin-AP stoppet og WiFi slått av.");
+    WDBG_PRINTLN("🔒 Admin-AP stoppet og WiFi slått av.");
 }
 
 void ConfigManager::loop() {

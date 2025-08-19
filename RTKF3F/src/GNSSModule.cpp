@@ -1,10 +1,17 @@
-// GNSSModule.cpp
+﻿// GNSSModule.cpp
 #include <Arduino.h>    
 #include <RFM69.h>
 #include <HardwareSerial.h>
 #include <RTKF3F.h>
 
 #include "GNSSModule.h"
+#include "_macros.h"
+
+bool readOneRTCM(Stream& s,
+    uint8_t* outBuf,
+    size_t& outLen,
+    size_t maxLen,
+    uint32_t timeoutMs = 50); // default ok
 
 GNSSModule::GNSSModule(HardwareSerial& serial)
     : _serial(serial), _nmeaIdx(0), rtcmHandler(this) {
@@ -20,18 +27,17 @@ bool GNSSModule::gpsDataAvailable() {
 
 int GNSSModule::detectUARTPort() {
     const char* testCommands[] = {
-        "versiona com1",
-        "versiona com2",
-        "versiona com3"
+        "unlog com1",
+        "unlog com2",
+        "unlog com3"
     };
 
     for (int port = 1; port <= 3; port++) {
         _serial.flush(); // Clear any previous data
         delay(100);
-        _serial.print(testCommands[port - 1]);
-        _serial.print("\r\n");
+        GDBG_PRINTLN("GNSS: Testing port " + String(port) + " with command: " + testCommands[port - 1]);
 
-		Serial.println("GNSS: Testing port " + String(port) + " with command: " + testCommands[port - 1]);
+		sendCommand(testCommands[port - 1]);
 
         unsigned long startTime = millis();
         String response = "";
@@ -43,7 +49,7 @@ int GNSSModule::detectUARTPort() {
             }
         }
 
-        if (response.indexOf("VERSIONA") != -1 || response.indexOf("#VERSIONA") != -1) {
+        if (response.indexOf("$command,unlog,response: OK")) {
             return port;
         }
     }
@@ -51,25 +57,206 @@ int GNSSModule::detectUARTPort() {
 }
 
 void GNSSModule::sendCommand(const String& command) {
-    Serial.print("GPS: Sending command: ");
-    Serial.println(command);
+    GDBG_PRINT("GPS: Command [");
+    GDBG_PRINT(command);
+    GDBG_PRINT("] ");
     unsigned long start = millis();
     _serial.print(command);
+	_serial.print("\r\n");
     while ((millis() - start) < COMMANDDELAY) {
-        if (_serial.available()) Serial.write(_serial.read());
+        if (_serial.available()) GDBG_WRITE(_serial.read());
     }
 }
 
 void GNSSModule::sendReset() {
-	String command = "freset\r\n";
-    Serial.print("GPS: Sending command: ");
-    Serial.println(command);
+	String command = "freset";
+    GDBG_PRINT("GPS: Command [");
+    GDBG_PRINT(command);
+    GDBG_PRINT("] ");
     unsigned long start = millis();
     _serial.print(command);
-    while ((millis() - start) < 5000) {
-        if (_serial.available()) Serial.write(_serial.read());
+    _serial.print("\r\n");
+    while ((millis() - start) < RESETDELAY) {
+        if (_serial.available()) GDBG_WRITE(_serial.read());
     }
 }
+
+static bool waitAvail(Stream& s, size_t n, uint32_t timeoutMs) {
+    uint32_t t0 = millis();
+    while ((size_t)s.available() < n) {
+        if (millis() - t0 > timeoutMs) return false;
+        delay(1);
+    }
+    return true;
+}
+
+bool readOneRTCM(Stream& s,
+    uint8_t* outBuf,
+    size_t& outLen,
+    size_t maxLen,
+    uint32_t timeoutMs)
+{
+    outLen = 0;
+    if (maxLen < 6) return false;
+
+    // 1) Finn 0xD3
+    if (!waitAvail(s, 1, timeoutMs)) return false;
+    int b = s.read();
+    while (b != 0xD3) {
+        if (!waitAvail(s, 1, timeoutMs)) return false;
+        b = s.read();
+    }
+    outBuf[0] = 0xD3;
+
+    // 2) Lengde
+    if (!waitAvail(s, 2, timeoutMs)) return false;
+    outBuf[1] = (uint8_t)s.read();
+    outBuf[2] = (uint8_t)s.read();
+
+    uint16_t payloadLen = ((outBuf[1] & 0x03) << 8) | outBuf[2];
+    size_t total = 3 + payloadLen + 3;
+    if (total > maxLen) return false;
+
+    // 3) Resten
+    if (!waitAvail(s, payloadLen + 3, timeoutMs)) return false;
+    for (size_t i = 0; i < payloadLen + 3; ++i) {
+        outBuf[3 + i] = (uint8_t)s.read();
+    }
+
+    outLen = total;
+    return true;
+}
+inline bool readLineWithTimeout(HardwareSerial& serial,
+    char* buffer,
+    size_t& len,
+    size_t maxLen,
+    uint32_t timeoutMs);
+
+// «Ekte» implementasjon: jobber på uint8_t*-buffer
+bool readLineWithTimeout(HardwareSerial& serial,
+    uint8_t* buffer,
+    size_t& len,
+    size_t maxLen,
+    uint32_t timeoutMs)
+{
+    len = 0;
+    const uint32_t start = millis();
+
+    // Beskytt mot maxLen==0
+    if (maxLen == 0) return false;
+
+    while (millis() - start < timeoutMs) {
+        while (serial.available() > 0) {
+            int v = serial.read();
+            if (v < 0) break;                 // ingenting å lese likevel
+            uint8_t c = static_cast<uint8_t>(v);
+
+            // Samle opp, men ikke gå over buffer (spar 1 byte til '\0')
+            if (len < (maxLen - 1)) {
+                buffer[len++] = c;
+            }
+            // Stopp på LF; strip CR/LF og nullterminér
+            if (c == '\n') {
+                // Fjern evt. CR/LF på slutten
+                while (len > 0 && (buffer[len - 1] == '\n' || buffer[len - 1] == '\r')) {
+                    --len;
+                }
+                buffer[len] = '\0';
+                return true;
+            }
+        }
+        // Gi andre tasks litt CPU
+        delay(1);
+    }
+
+    // Timeout: nullterminer evt. delvis linje og strip CR/LF
+    if (len > 0) {
+        while (len > 0 && (buffer[len - 1] == '\n' || buffer[len - 1] == '\r')) {
+            --len;
+        }
+        buffer[len] = '\0';
+    }
+    return false;
+}
+
+// Overload som lar deg sende inn char*-buffer uten cast i brukerstedet
+inline bool readLineWithTimeout(HardwareSerial& serial,
+    char* buffer,
+    size_t& len,
+    size_t maxLen,
+    uint32_t timeoutMs)
+{
+    return readLineWithTimeout(serial,
+        reinterpret_cast<uint8_t*>(buffer),
+        len, maxLen, timeoutMs);
+}
+
+GNSSModule::GNSSMessage GNSSModule::readGPS() {
+    GNSSMessage result;
+
+    int first = _serial.peek();
+    if (first < 0) return result;
+
+    // 1) Kommandosvar (#...) eller $command,...
+    if (first == '#') {
+        size_t len = 0;
+        if (readLineWithTimeout(_serial, _gpsBuf, len, sizeof(_gpsBuf), 50)) {  // <-- manglet ,50)
+            result.type = GNSSMessageType::COMMAND_RESPONSE;
+            result.data = _gpsBuf;
+            result.length = len;
+            return result;
+        }
+        // Ikke konsumér byte her; vent til hele linja kommer
+        return result;
+    }
+
+    if (first == '$') {
+        size_t len = 0;
+        if (readLineWithTimeout(_serial, _gpsBuf, len, sizeof(_gpsBuf), 50)) {
+            constexpr size_t tagLen = sizeof("$command,") - 1;
+            if (len >= tagLen && memcmp(_gpsBuf, "$command,", tagLen) == 0) {
+                result.type = GNSSMessageType::COMMAND_RESPONSE;
+            }
+            else {
+                result.type = GNSSMessageType::NMEA;
+            }
+            result.data = _gpsBuf;
+            result.length = len;
+            return result;
+        }
+        // Ikke konsumér byte her; vent til hele linja kommer
+        return result;
+    }
+
+    // 2) RTCM (binær)
+    if (first == 0xD3) {
+        size_t len = 0;
+        if (readOneRTCM(_serial, _gpsBuf, len, sizeof(_gpsBuf), 50)) {
+            result.type = GNSSMessageType::RTCM;
+            result.data = _gpsBuf;
+            result.length = len;
+            return result;
+        }
+        // Feil/timeout i binær: dropp 1 byte for å søke ny sync
+        if (_serial.available()) _serial.read();
+        return result;
+    }
+
+    // 3) (valgfritt) UBX bak makro
+#ifdef USE_UBX
+    if (first == 0xB5) {
+        if (readUBX(_serial, _gpsBuf, result, 50)) return result;
+        // På UBX-timeout kan du også velge å *ikke* konsumere, men dette er greit:
+        if (_serial.available()) _serial.read();
+        return result;
+    }
+#endif
+
+    // Ukjent byte → konsumér én for å komme videre
+    if (_serial.available()) _serial.read();
+    return result;
+}
+
 
 
 String GNSSModule::fixTypeToString(int fixType) {
@@ -91,93 +278,189 @@ void GNSSModule::printAscii() {
     for (size_t i = 0; i < _gpsBufLen; ++i) {
         char c = _gpsBuf[i];
         if (c >= 32 && c <= 126) // Printable ASCII range
-            Serial.print(c);
+            GDBG_PRINT(c);
         else if (c == '\r')
-            Serial.print("\\r");
+            GDBG_PRINT("\\r");
         else if (c == '\n')
-            Serial.print("\\n");
+            GDBG_PRINT("\\n");
         else
-            Serial.print('.');
+            GDBG_PRINT('.');
     }
-    Serial.println();
+    GDBG_PRINTLN();
 }
 
-GNSSModule::GNSSMessage GNSSModule::readGPS() {
-    GNSSMessage result;
+bool GNSSModule::parseGGA(const uint8_t* buf, size_t len, GNSSFix& fix) {
+    const int MAX_FIELDS = 20;
+    const int BUF_SIZE = 128;
+    char local[BUF_SIZE];
 
-    int first = _serial.peek();
-    if (first < 0) return result;
-
-    if (first == '$') {
-        size_t len = 0;
-        if (readNMEA(_gpsBuf, len)) {
-            result.type = GNSSMessageType::NMEA;
-            result.data = _gpsBuf;
-            result.length = len;
-            return result;
-        }
+    // Debug print (valgfritt)
+    for (size_t i = 0; i < len; i++) {
+        GDBG_PRINTF(buf[i] < 32 ? "." : "%c", buf[i]);
     }
-    else if (first == '#') {
-        size_t len = 0;
-        if (readCommandResponse(_gpsBuf, len)) {
-            printAscii();
-            result.type = GNSSMessageType::COMMAND_RESPONSE;
-            result.data = _gpsBuf;
-            result.length = len;
-            return result;
-        }
+    GDBG_PRINTLN();
+
+    // Rask sanity
+    if (len < 6 || buf[0] != '$') return false;
+
+    // Lag sikker, null-terminert kopi
+    if (len >= BUF_SIZE) len = BUF_SIZE - 1;
+    memcpy(local, buf, len);
+    local[len] = '\0';
+
+    // Fjern CR/LF i enden om de finnes (ikke nødvendig, men ryddig)
+    while (len && (local[len - 1] == '\r' || local[len - 1] == '\n')) {
+        local[--len] = '\0';
     }
-    else if (first == 0xD3) {
-        size_t len = 0;
-        if (readRTCM(_gpsBuf, len)) {
-            result.type = GNSSMessageType::RTCM;
-            result.data = _gpsBuf;
-            result.length = len;
-            return result;
-        }
-    }
-    else if (first == 0xB5) {
-        if (_serial.available() >= 2) {
-            int sync1 = _serial.read();
-            int sync2 = _serial.read();
-            if (sync1 == 0xB5 && sync2 == 0x62) {
-                while (_serial.available() < 4);
-                uint8_t cls = _serial.read();
-                uint8_t id = _serial.read();
-                uint16_t len = _serial.read() | (_serial.read() << 8);
 
-                if (len > sizeof(_gpsBuf) - 8) return result;
+    // Finn start (hopp over '$')
+    char* p = local;
+    if (*p == '$') ++p;
 
-                _gpsBuf[0] = cls;
-                _gpsBuf[1] = id;
-                for (int i = 0; i < len; ++i)
-                    _gpsBuf[2 + i] = _serial.read();
-                uint8_t ckA = _serial.read();
-                uint8_t ckB = _serial.read();
+    // Kapp av *checksum hvis til stede (vi validerer ikke her, men unngår at * havner i siste felt)
+    char* star = strchr(p, '*');
+    if (star) *star = '\0';
 
-                result.type = GNSSMessageType::UBX;
-                result.data = _gpsBuf;
-                result.length = len + 2;
+    // Del opp i felt og BEVAR tomme felter
+    // fields[0] = talker+type (f.eks. "GNGGA" eller "GPGGA")
+    const char* fields[MAX_FIELDS] = { nullptr };
+    int fieldCount = 0;
 
-                if (cls == 0x01 && id == 0x3C)
-                    result.type = GNSSMessageType::UBX_RELPOSNED;
-                else if (cls == 0x01 && id == 0x07)
-                    result.type = GNSSMessageType::UBX_NAV_PVT;
-                else if (cls == 0x05 && id == 0x01)
-                    result.type = GNSSMessageType::UBX_ACK_ACK;
-                else if (cls == 0x05 && id == 0x00)
-                    result.type = GNSSMessageType::UBX_ACK_NAK;
-
-                return result;
+    char* fieldStart = p;
+    for (char* s = p; ; ++s) {
+        if (*s == ',' || *s == '\0') {
+            if (fieldCount < MAX_FIELDS) {
+                // Sett terminator der komma var (om det var komma)
+                char saved = *s;
+                *s = '\0';
+                fields[fieldCount++] = fieldStart; // Kan være tom streng ""
+                if (saved == '\0') break;
+                // Neste felt starter etter komma
+                fieldStart = s + 1;
+            }
+            else {
+                break;
             }
         }
     }
-    else {
-        _serial.read();  // consume unknown byte
+
+    // Må i det minste ha setningstype
+    if (fieldCount == 0 || fields[0] == nullptr) return false;
+
+    // Sjekk at dette er en GGA
+    // Tillat både GN/G P GGA osv: slutt på "GGA"
+    const char* type = fields[0];
+    size_t tlen = strlen(type);
+    if (tlen < 3 || strcmp(type + (tlen - 3), "GGA") != 0) {
+        return false;
     }
 
-    return result;
+    // Hjelper for trygg henting av felt (kan være nullptr eller "")
+    auto f = [&](int idx) -> const char* {
+        return (idx < fieldCount && fields[idx]) ? fields[idx] : "";
+        };
+
+    // Init default/0 (i tilfelle tomme felter)
+    fix.hour = fix.minute = 0;
+    fix.second = 0.0f;
+    fix.lat = fix.lon = 0.0f;
+    fix.fixType = 0;
+    fix.SIV = 0;
+    fix.HDOP = 0;  // lagres som *100
+    fix.alt = 0.0f;
+
+    // Feltindekser (NMEA GGA):
+    // 0:  talker+type  (..GGA)
+    // 1:  time (hhmmss.ss)
+    // 2:  lat (ddmm.mmmm)
+    // 3:  N/S
+    // 4:  lon (dddmm.mmmm)
+    // 5:  E/W
+    // 6:  fix quality (0=no fix, 1=GPS, 2=DGPS, 4=RTK fixed, 5=RTK float, ...)
+    // 7:  num sats used
+    // 8:  HDOP
+    // 9:  alt (MSL)
+    // 10: 'M'
+    // 11: geoid sep
+    // 12: 'M'
+    // 13: age of diff
+    // 14: diff ref station
+
+    // 1) Tid
+    if (*f(1)) {
+        // Noen moduler kan sende "hhmmss", "hhmmss.sss" eller "hhmmss.ss"
+        double rawTime = atof(f(1));
+        int hh = int(rawTime / 10000.0);
+        int mm = int(fmod(rawTime / 100.0, 100.0));
+        double ss = fmod(rawTime, 100.0);
+        if (hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59 && ss >= 0.0 && ss < 60.0 + 1e-3) {
+            fix.hour = hh;
+            fix.minute = mm;
+            fix.second = float(ss);
+        }
+    }
+
+    // 2) Lat/Lon
+    auto parseLatLon = [](const char* raw, const char* dir, bool isLat, double& out) {
+        out = 0.0;
+        if (!raw || !*raw || !dir || !*dir) return;
+        double val = atof(raw);
+        if (val <= 0.0) return;
+
+        int deg = isLat ? int(val / 100.0) : int(val / 100.0);
+        double min = val - deg * 100.0;
+        double degDec = double(deg) + (min / 60.0);
+        char d = dir[0];
+        if ((isLat && (d == 'N' || d == 'S')) ||
+            (!isLat && (d == 'E' || d == 'W'))) {
+            if (d == 'S' || d == 'W') degDec = -degDec;
+            out = degDec;
+        }
+        };
+
+    double latDec = 0.0, lonDec = 0.0;
+    parseLatLon(f(2), f(3), true, latDec);
+    parseLatLon(f(4), f(5), false, lonDec);
+    fix.lat = (float)latDec;
+    fix.lon = (float)lonDec;
+
+    // 3) Fix-type og SIV
+    if (*f(6)) fix.fixType = atoi(f(6)); // 0 = no fix
+    if (*f(7)) fix.SIV = atoi(f(7)); // satelitter brukt
+
+    // 4) HDOP
+    if (*f(8)) {
+        double hd = atof(f(8));
+        // UM980 sender ofte 9999.0 når ikke gyldig -> sett til 0 for "ikke tilgjengelig"
+        if (hd > 0.0 && hd < 100.0) {
+            fix.HDOP = int(hd * 100.0 + 0.5);  // *100 for å bevare to desimaler som int
+        }
+        else {
+            fix.HDOP = 0;
+        }
+    }
+    else {
+        fix.HDOP = 0;
+    }
+
+    // 5) Høyde (MSL)
+    if (*f(9)) {
+        fix.alt = (float)atof(f(9));
+    }
+    else {
+        fix.alt = 0.0f;
+    }
+
+    // Avledede flagg
+    fix.gpsFix = (fix.fixType > 0);
+    fix.diffUsed = (fix.fixType >= 2);
+    fix.rtkFix = (fix.fixType == 4);
+    fix.rtkFloat = (fix.fixType == 5);
+
+    // Vi returnerer TRUE selv om fixType==0, siden feltene (tid, SIV, osv.) er populert.
+    return true;
 }
+
 
 bool GNSSModule::readNMEA(uint8_t* buffer, size_t& len) {
     static uint8_t nmeaBuf[128];
@@ -304,93 +587,6 @@ uint32_t GNSSModule::calculateCRC24Q(const uint8_t* data, size_t len) {
     return crc & 0xFFFFFF;
 }
 
-int GNSSModule::parseField(const String& line, int num) {
-    int start = line.indexOf(",") + 1;
-    for (int i = 0; i < num; i++) {
-        start = line.indexOf(",", start) + 1;
-    }
-    int end = line.indexOf(",", start);
-    return line.substring(start, end).toInt();
-}
-
-bool GNSSModule::parseGGA(const uint8_t* buf, size_t len, GNSSFix& fix) {
-    const int MAX_FIELDS = 20;
-    const int BUF_SIZE = 128;
-    char local[BUF_SIZE];
-
-    // 1. Make a safe local copy and ensure null-terminated
-    if (len >= BUF_SIZE) len = BUF_SIZE - 1;
-    memcpy(local, buf, len);
-    local[len] = '\0';
-
-    // 2. Skip initial '$' if present
-    char* p = local;
-    if (*p == '$') ++p;
-
-    // 3. Tokenize by ','
-    const char* fields[MAX_FIELDS] = { nullptr };
-    int fieldCount = 0;
-    fields[fieldCount++] = strtok(p, ",");
-    while (fieldCount < MAX_FIELDS) {
-        char* token = strtok(nullptr, ",");
-        if (!token) break;
-        fields[fieldCount++] = token;
-    }
-
-    if (fieldCount < 9) return false;
-
-    // Parse time
-    if (fields[1] && *fields[1]) {
-        float rawTime = atof(fields[1]);
-        fix.hour = int(rawTime / 10000);
-        fix.minute = int(fmod(rawTime / 100, 100));
-        fix.second = fmod(rawTime, 100);
-    }
-    else {
-        fix.hour = fix.minute = fix.second = 0;
-    }
-
-    // Lat/lon
-    float latRaw = fields[2] && *fields[2] ? atof(fields[2]) : 0;
-    char latDir = fields[3] && *fields[3] ? fields[3][0] : 0;
-    float lonRaw = fields[4] && *fields[4] ? atof(fields[4]) : 0;
-    char lonDir = fields[5] && *fields[5] ? fields[5][0] : 0;
-
-    if (latRaw > 0 && (latDir == 'N' || latDir == 'S')) {
-        int deg = int(latRaw / 100);
-        float min = latRaw - deg * 100;
-        fix.lat = deg + min / 60.0f;
-        if (latDir == 'S') fix.lat = -fix.lat;
-    }
-    else {
-        fix.lat = 0;
-    }
-
-    if (lonRaw > 0 && (lonDir == 'E' || lonDir == 'W')) {
-        int deg = int(lonRaw / 100);
-        float min = lonRaw - deg * 100;
-        fix.lon = deg + min / 60.0f;
-        if (lonDir == 'W') fix.lon = -fix.lon;
-    }
-    else {
-        fix.lon = 0;
-    }
-
-    fix.fixType = fields[6] && *fields[6] ? atoi(fields[6]) : 0;
-    fix.SIV = fields[7] && *fields[7] ? atoi(fields[7]) : 0;
-    float hdop = fields[8] && *fields[8] ? atof(fields[8]) : 0;
-    fix.HDOP = int(hdop * 100);
-    fix.alt = fields[9] && *fields[9] ? atof(fields[9]) : 0;
-
-    fix.gpsFix = (fix.fixType > 0);
-    fix.diffUsed = (fix.fixType >= 2);
-    fix.rtkFix = (fix.fixType == 4);
-    fix.rtkFloat = (fix.fixType == 5);
-
-    return true;
-}
-
-
 const char* GNSSModule::getRTCMName(uint16_t type) {
     switch (type) {
     case 1001: return "RTCM 1001: GPS L1 Obs";
@@ -450,7 +646,7 @@ uint16_t GNSSModule::getRTCMBits(const uint8_t* buffer, int startBit, int bitLen
 }
 
 void GNSSModule::showFix(const GNSSFix& fix) {
-    Serial.printf(
+    GDBG_PRINTF(
         "Time %02d:%02d:%05.2f "
         " %.6f%c"
         " %.6f%c"
@@ -577,17 +773,26 @@ void GNSSModule::RTCMHandler::setFrequency(int index, float freq) {
         sendConfig(index);
 }
 
+#define ARRAY_LEN(x) (sizeof(x) / sizeof((x)[0]))
+
 void GNSSModule::RTCMHandler::sendConfig(int index) {
     if (!parent) return;
+    if (index < 0 || index >= (int)ARRAY_LEN(messages)) return; // bounds check
+
     auto& msg = messages[index];
+    if (!msg.name) return; // sikkerhet
+
     String cmd;
     if (msg.enabled)
-        cmd = String(msg.name) + " com2 " + String(msg.frequency, 1) + "\r\n";
+        cmd = String(msg.name) + " com2 " + String(msg.frequency, 1);
     else
-        cmd = "unlog " + String(msg.name) + " com2\r\n";
-    parent->sendCommand(cmd);
-    Serial.printf("Sending %s\r\n", cmd);
-	delay(100); // Wait for command to be processed
+        cmd = "unlog " + String(msg.name) + " com2";
+
+    GDBG_PRINTF("sendConfig: Sending %s", cmd.c_str());  // <-- viktig
+
+    parent->sendCommand(cmd); // antar denne tar String
+
+    delay(100);
 }
 
 void GNSSModule::RTCMHandler::sendAllConfig() {
@@ -596,12 +801,12 @@ void GNSSModule::RTCMHandler::sendAllConfig() {
 }
 
 void GNSSModule::RTCMHandler::printList(bool showOnlyEnabled) {
-    Serial.println(" #  Name        |  Freq   | State    | Sent   | Description");
-    Serial.println("-------------------------------------------------------------------");
+    GDBG_PRINTLN(" #  Name        |  Freq   | State    | Sent   | Description");
+    GDBG_PRINTLN("-------------------------------------------------------------------");
     for (size_t i = 0; i < count; ++i) {
         if (showOnlyEnabled && !messages[i].enabled) continue;
         const char* color = messages[i].enabled ? ANSI_GREEN : ANSI_RED;
-        Serial.printf("%s%2d: %-10s | %5.2f Hz | %-8s | %6lu | %s%s\n",
+        GDBG_PRINTF("%s%2d: %-10s | %5.2f Hz | %-8s | %6lu | %s%s\n",
             color,
             (int)(i + 1),
             messages[i].name,
