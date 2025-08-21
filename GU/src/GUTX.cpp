@@ -8,8 +8,6 @@
 #include "GUTX.h"
 
 extern RadioModule radioMod;
-//extern Slope slope;
-
 
 
 void txEvent(EventCode code, uint8_t status_flags) {

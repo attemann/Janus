@@ -14,11 +14,12 @@ bool readOneRTCM(Stream& s,
     uint32_t timeoutMs = 50); // default ok
 
 GNSSModule::GNSSModule(HardwareSerial& serial)
-    : _serial(serial), _nmeaIdx(0), rtcmHandler(this) {
+    : _serial(serial), /* _nmeaIdx(0),*/ rtcmHandler(this) {
 }
 
 void GNSSModule::begin(uint32_t baud, int RX, int TX) {
     _serial.begin(baud, SERIAL_8N1, RX, TX);
+    _serial.setRxBufferSize(4096);
 }
 
 bool GNSSModule::gpsDataAvailable() {
@@ -90,35 +91,48 @@ static bool waitAvail(Stream& s, size_t n, uint32_t timeoutMs) {
     return true;
 }
 
-bool readOneRTCM(Stream& s,
-    uint8_t* outBuf,
-    size_t& outLen,
-    size_t maxLen,
-    uint32_t timeoutMs)
-{
+
+bool readOneRTCM(Stream& s,uint8_t* outBuf,size_t& outLen,size_t maxLen,uint32_t stepTimeoutMs) {
     outLen = 0;
     if (maxLen < 6) return false;
 
-    // 1) Finn 0xD3
-    if (!waitAvail(s, 1, timeoutMs)) return false;
-    int b = s.read();
-    while (b != 0xD3) {
-        if (!waitAvail(s, 1, timeoutMs)) return false;
-        b = s.read();
+    // 1) Resync to 0xD3
+    uint32_t t0 = millis();
+    while (true) {
+        if (s.available() > 0) {
+            int b = s.read();
+            if (b == 0xD3) {
+                outBuf[0] = 0xD3;
+                break; // got sync
+            }
+            // else keep scanning
+        }
+        else if (millis() - t0 > stepTimeoutMs) {
+            return false; // no data -> try again later
+        }
+        else {
+            delay(1);
+        }
     }
-    outBuf[0] = 0xD3;
 
-    // 2) Lengde
-    if (!waitAvail(s, 2, timeoutMs)) return false;
+    // 2) Read 2 bytes of length
+    if (!waitAvail(s, 2, stepTimeoutMs)) return false; // will re-sync next call
     outBuf[1] = (uint8_t)s.read();
     outBuf[2] = (uint8_t)s.read();
 
-    uint16_t payloadLen = ((outBuf[1] & 0x03) << 8) | outBuf[2];
-    size_t total = 3 + payloadLen + 3;
-    if (total > maxLen) return false;
+    const uint16_t payloadLen = ((outBuf[1] & 0x03) << 8) | outBuf[2];
+    const size_t   total = 3 + payloadLen + 3;
 
-    // 3) Resten
-    if (!waitAvail(s, payloadLen + 3, timeoutMs)) return false;
+    if (total > maxLen) {
+        if (!waitAvail(s, payloadLen + 3, stepTimeoutMs)) {
+            return false;
+        }
+        for (size_t i = 0; i < payloadLen + 3; ++i) (void)s.read();
+        return false;
+    }
+
+    // 3) Read payload + CRC
+    if (!waitAvail(s, payloadLen + 3, stepTimeoutMs)) return false;
     for (size_t i = 0; i < payloadLen + 3; ++i) {
         outBuf[3 + i] = (uint8_t)s.read();
     }
@@ -126,13 +140,14 @@ bool readOneRTCM(Stream& s,
     outLen = total;
     return true;
 }
+
+
 inline bool readLineWithTimeout(HardwareSerial& serial,
     char* buffer,
     size_t& len,
     size_t maxLen,
     uint32_t timeoutMs);
 
-// «Ekte» implementasjon: jobber på uint8_t*-buffer
 bool readLineWithTimeout(HardwareSerial& serial,
     uint8_t* buffer,
     size_t& len,
@@ -231,7 +246,7 @@ GNSSModule::GNSSMessage GNSSModule::readGPS() {
     // 2) RTCM (binær)
     if (first == 0xD3) {
         size_t len = 0;
-        if (readOneRTCM(_serial, _gpsBuf, len, sizeof(_gpsBuf), 50)) {
+        if (readOneRTCM(_serial, _gpsBuf, len, sizeof(_gpsBuf), 200)) {
             result.type = GNSSMessageType::RTCM;
             result.data = _gpsBuf;
             result.length = len;
@@ -462,7 +477,7 @@ bool GNSSModule::parseGGA(const uint8_t* buf, size_t len, GNSSFix& fix) {
 }
 
 
-bool GNSSModule::readNMEA(uint8_t* buffer, size_t& len) {
+ bool GNSSModule::readNMEA(uint8_t* buffer, size_t& len) {
     static uint8_t nmeaBuf[128];
     static size_t nmeaPos = 0;
     static bool inSentence = false;
@@ -498,6 +513,7 @@ bool GNSSModule::readNMEA(uint8_t* buffer, size_t& len) {
     return false;
 }
 
+
 bool GNSSModule::readCommandResponse(uint8_t* buffer, size_t& len) {
     size_t idx = 0;
     while (_serial.available()) {
@@ -520,44 +536,6 @@ bool GNSSModule::readCommandResponse(uint8_t* buffer, size_t& len) {
     return false;
 }
 
-bool GNSSModule::readRTCM(uint8_t* buffer, size_t& len) {
-    const unsigned long timeout = 100;
-    unsigned long startTime;
-
-    while (_serial.available()) {
-        if (_serial.read() != 0xD3) continue;
-
-        startTime = millis();
-        while (_serial.available() < 2) {
-            if (millis() - startTime > timeout) return false;
-        }
-        uint8_t lenH = _serial.read();
-        uint8_t lenL = _serial.read();
-        uint16_t payloadLen = ((lenH & 0x03) << 8) | lenL;
-
-        if (payloadLen > 1023) return false;
-
-        size_t totalLen = 3 + payloadLen + 3;
-
-        startTime = millis();
-        while (_serial.available() < payloadLen + 3) {
-            if (millis() - startTime > timeout) return false;
-        }
-
-        buffer[0] = 0xD3;
-        buffer[1] = lenH;
-        buffer[2] = lenL;
-        for (size_t i = 0; i < payloadLen + 3; i++) {
-            buffer[3 + i] = _serial.read();
-        }
-
-        len = totalLen;
-        return isValidRTCM(buffer, len);
-    }
-
-    return false;
-}
-
 uint16_t GNSSModule::getRTCMType(const uint8_t* buf, size_t len) {
     if (len < 6 || buf[0] != 0xD3) return 0; // sanity check
     uint16_t type = ((buf[3] << 4) | (buf[4] >> 4)) & 0x0FFF;
@@ -565,26 +543,42 @@ uint16_t GNSSModule::getRTCMType(const uint8_t* buf, size_t len) {
 }
 
 bool GNSSModule::isValidRTCM(const uint8_t* data, size_t len) {
-    if (data[0] != 0xD3 || len < 6) return false;
-    uint16_t payloadLen = ((data[1] & 0x3F) << 8) | data[2];
-    if (3 + payloadLen + 3 > len) return false; // not enough data
+    if (data[0] != 0xD3 || len < 6) {
+        Serial.println("RTCM: header mismatch or too short");
+        return false;
+    }
 
-    uint32_t crc = calculateCRC24Q(data, 3 + payloadLen);
-    uint32_t recvCrc = (data[3 + payloadLen] << 16) | (data[4 + payloadLen] << 8) | data[5 + payloadLen];
+    uint16_t payloadLen = ((data[1] & 0x03) << 8) | data[2]; // only 2 LSBs of byte 1    if (len != 3 + payloadLen + 3) return false;              // exact length check
+    uint32_t totalLen = 3 + payloadLen + 3;
 
-    return crc == recvCrc;
+    if (len != totalLen) {
+        Serial.printf("RTCM: length mismatch (have %u, want %u)\n", len, totalLen);
+        return false;
+    }
+
+    uint32_t want = ((uint32_t)data[totalLen - 3] << 16) |
+        ((uint32_t)data[totalLen - 2] << 8) |
+        data[totalLen - 1];
+    uint32_t got = calculateCRC24Q(data, totalLen - 3);
+    if (want != got) {
+        Serial.printf("RTCM: CRC fail (type=%d len=%u)\n", getRTCMType(data, len), len);
+        return false;
+    }
+    return true;
 }
 
 uint32_t GNSSModule::calculateCRC24Q(const uint8_t* data, size_t len) {
     uint32_t crc = 0;
-    for (size_t i = 0; i < len; i++) {
-        crc ^= ((uint32_t)data[i] << 16);
-        for (int j = 0; j < 8; j++) {
+    for (size_t i = 0; i < len; ++i) {
+        crc ^= ((uint32_t)data[i]) << 16;
+        for (int j = 0; j < 8; ++j) {
             crc <<= 1;
-            if (crc & 0x1000000) crc ^= 0x1864CFB;
+            if (crc & 0x1000000)
+                crc ^= 0x1864CFB;
         }
+        crc &= 0xFFFFFF;
     }
-    return crc & 0xFFFFFF;
+    return crc;
 }
 
 const char* GNSSModule::getRTCMName(uint16_t type) {
@@ -647,17 +641,13 @@ uint16_t GNSSModule::getRTCMBits(const uint8_t* buffer, int startBit, int bitLen
 
 void GNSSModule::showFix(const GNSSFix& fix) {
     GDBG_PRINTF(
-        "Time %02d:%02d:%05.2f "
+        "Time %02d:%02d:%02.0f "
         " %.6f%c"
         " %.6f%c"
-        " %.2fm\n"
-        " %d %s"
-        " SIV=%d"
-        " HDOP=%.2f "
-        " GPS Fix [%s]"
-        " DGPS Used [%s]"
-        " RTK Float [%s]"
-        " RTK Fixed [%s]\n"
+        " %.2fm"
+        ANSI_GREEN " FIX=%d" ANSI_RESET
+        ANSI_GREEN " SIV=%d" ANSI_RESET
+        " HDOP=%.2f\r\n"
         //" relNorth %.3f m"
         //" relEast  %.3f m"
         //" relDown  %.3f m\n"
@@ -670,14 +660,9 @@ void GNSSModule::showFix(const GNSSFix& fix) {
         fabs(fix.lat), (fix.lat < 0 ? 'S' : 'N'),
         fabs(fix.lon), (fix.lon < 0 ? 'W' : 'E'),
         fix.alt,
-        fix.fixType, fixTypeToString(fix.fixType).c_str(),
+        fix.fixType,
         fix.SIV,
-        fix.HDOP / 100.0f,  // convert HDOP from cm to float
-        fix.gpsFix ? "1" : "0",
-        fix.diffUsed ? "1" : "0",
-        fix.rtkFloat ? "1" : "0",
-        fix.rtkFix ? "1" : "0"
-
+        fix.HDOP / 100.0f
         //fix.relNorth, fix.relEast, fix.relDown,
         //fix.adjNorth, fix.adjEast, fix.adjDown
     );
@@ -690,55 +675,6 @@ GNSSModule::RTCMHandler::RTCMHandler(GNSSModule* gnss) : parent(gnss) {
     add("rtcm1124", 1124, 1.0f,  true, "BeiDou MSM4");
     add("rtcm1084", 1084, 1.0f,  true, "GLONASS MSM4");
     add("rtcm1094", 1094, 1.0f,  true, "Galileo MSM4");
-
-    // Example messages, add more as needed
-    //add("rtcm1001", 1001, 1.0f, false, "GPS L1 Obs");
-    //add("rtcm1002", 1002, 1.0f, false, "GPS L1 Obs (Ext)");
-    //add("rtcm1003", 1003, 1.0f, false, "GPS L1/L2 Obs");
-    //add("rtcm1004", 1004, 1.0f, false, "GPS L1/L2 Obs (Ext)");
-    //add("rtcm1005", 1005, 1.0f, false, "Stat. Ref (no height)");
-
-    //add("rtcm1007", 1007, 1.0f, false, "Antenna Descriptor");
-    //add("rtcm1008", 1008, 1.0f, false, "Ant. Descriptor + SN");
-
-    //add("rtcm1071", 1071, 1.0f, false, "GPS MSM1");
-    //add("rtcm1072", 1072, 1.0f, false, "GPS MSM2");
-    //add("rtcm1073", 1073, 1.0f, false, "GPS MSM3");
-
-    //add("rtcm1075", 1075, 1.0f, false, "GPS MSM5");
-    //add("rtcm1076", 1076, 1.0f, false, "GPS MSM6");
-    //add("rtcm1077", 1077, 1.0f, false, "GPS MSM7");
-
-    //add("rtcm1081", 1081, 1.0f, false, "GLONASS MSM1");
-    //add("rtcm1082", 1082, 1.0f, false, "GLONASS MSM2");
-    //add("rtcm1083", 1083, 1.0f, false, "GLONASS MSM3");
-
-    //add("rtcm1085", 1085, 1.0f, false, "GLONASS MSM5");
-    //add("rtcm1086", 1086, 1.0f, false, "GLONASS MSM6");
-    //add("rtcm1087", 1087, 1.0f, false, "GLONASS MSM7");
-
-    //add("rtcm1091", 1091, 1.0f, false, "Galileo MSM1");
-    //add("rtcm1092", 1092, 1.0f, false, "Galileo MSM2");
-    //add("rtcm1093", 1093, 1.0f, false, "Galileo MSM3");
-
-    //add("rtcm1095", 1095, 1.0f, false, "Galileo MSM5");
-    //add("rtcm1096", 1096, 1.0f, false, "Galileo MSM6");
-    //add("rtcm1097", 1097, 1.0f, false, "Galileo MSM7");
-
-    //add("rtcm1121", 1121, 1.0f, false, "BeiDou MSM1");
-    //add("rtcm1122", 1122, 1.0f, false, "BeiDou MSM2");
-    //add("rtcm1123", 1123, 1.0f, false, "BeiDou MSM3");
-
-    //add("rtcm1125", 1125, 1.0f, false, "BeiDou MSM5");
-    //add("rtcm1126", 1126, 1.0f, false, "BeiDou MSM6");
-    //add("rtcm1127", 1127, 1.0f, false, "BeiDou MSM7");
-
-    //add("rtcm1230", 1230, 10.0f, false, "GLONASS L1/L2 Bias");
-
-    //add("rtcm4072", 4072, 1.0f, false, "u-blox Proprietary");
-    //add("rtcm4073", 4073, 1.0f, false, "u-blox Subtype A");
-    //add("rtcm4074", 4074, 1.0f, false, "u-blox Subtype B");
-
 }
 
 void GNSSModule::RTCMHandler::add(const char* name, uint16_t id, float freq, bool enabled, const char* desc) {

@@ -1,8 +1,10 @@
-// MessageTypes.h
+// Structs.h
 #pragma once
 
-#ifndef MESSAGETYPES_H
-#define MESSAGETYPES_H
+#ifndef STRUCTS_H
+#define STRUCTS_H
+
+#include <Arduino.h>
 
 
 // Message Types
@@ -16,10 +18,20 @@ enum  MessageType : uint8_t {
     MSG_INFORMATION = 0xF0,       // General information
     MSG_ERROR = 0xF1,             // Error message
     MSG_SIV = 0xF2,               // Satellites in view
-	MSG_SURVEYING = 0xF3,         // Surveying status
+	MSG_DEVICESTATE = 0xF3,       // Device status
+	MSG_FIXTYPE = 0xF4,           // Fix type information
+	MSG_SURVEY = 0xF5,            // Surveying status
     MSG_G2B_EVENT = 0xB1,         // Glider-to-base event
     MSG_G2B_RELPOS = 0xB2,        // Glider-to-base relative position
     MSG_G2B_MISC = 0xB3           // Miscellaneous Glider-to-base
+};
+
+enum DeviceState {
+    DEVICE_STARTING = 0,
+    DEVICE_GETTINGFIX = 1,
+    DEVICE_SURVEYING = 2,
+    DEVICE_OPERATING = 3,
+    DEVICE_MENU = 4
 };
 
 // Fix types
@@ -38,11 +50,10 @@ enum  FixType : uint8_t {
 
 // Error Codes
 enum  ErrorCode : uint8_t {
-    ERROR_RADIO_INIT = 0x00,
-    ERROR_RADIO_VERIFY = 0x01,
-    ERROR_UART = 0x10,
-    ERROR_COM = 0x11,
-    ERROR_UNKNOWN = 0x63
+    ERR_RADIOINIT = 0x00,
+    ERR_UART = 0x01,
+    ERR_COM = 0x02,
+    ERR_UNKNOWN = 0x03
 };
 
 #endif

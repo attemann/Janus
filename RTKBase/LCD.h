@@ -6,8 +6,8 @@
 #include <Wire.h>
 
 //LCD i2C
-#define LCD_SDA       21
-#define LCD_SCL       22
+//#define LCD_SDA       21
+//#define LCD_SCL       22
 
 class LCDManager {
 public:

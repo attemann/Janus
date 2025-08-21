@@ -11,7 +11,7 @@
 #include <SPI.h>
 #include "RadioModule.h"
 #include "RFM69registers.h"
-#include "MessageTypes.h"
+#include "Structs.h"
 #include "_macros.h"
 
 // --------- Constants ---------
@@ -108,6 +108,10 @@ void RadioModule::send(uint16_t toAddress, const void* buffer, uint8_t bufferSiz
 
 uint8_t RadioModule::getSenderId() const { return _radio.SENDERID; }
 uint8_t RadioModule::getTargetId() const { return _radio.TARGETID; }
+uint8_t RadioModule::getLastRSSI() const { return _radio.RSSI; }
+
+
+
 
 bool RadioModule::receive(uint8_t* data, size_t& len) {
     if (!_radio.receiveDone()) return false;

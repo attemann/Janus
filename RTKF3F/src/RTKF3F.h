@@ -3,7 +3,7 @@
 #pragma once
 
 #include "Const.h"  
-#include "MessageTypes.h"
+#include "Structs.h"
 #include "GNSSModule.h"
 #include "RadioModule.h"
 #include "ConfigMgr.h"
@@ -12,33 +12,13 @@
 
 const char* getMessageName(MessageType type);
 
-#define FIX_TYPE_NOFIX   0
-#define FIX_TYPE_GPS     1
-#define FIX_TYPE_DGPS    2
-#define FIX_TYPE_PPS     3
-#define FIX_TYPE_RTK_FLOAT 4
-#define FIX_TYPE_RTK_FIX 5
-#define FIX_TYPE_DEAD_RECKONING 6
-#define FIX_TYPE_MANUAL 7
-#define FIX_TYPE_SIM    8
-#define FIX_TYPE_OTHER  9
-
 // BASE TRANSITION CODES
-#define INFO_TRANSITION_GETTINGFIX 0x01 
-#define INFO_TRANSITION_SURVEYING  0x02
-#define INFO_TRANSITION_OPERATING  0x03
-#define INFO_FIX_NOFIX	           0x04  
-#define INFO_FIX_GPS	           0x05
-#define INFO_FIX_DGPS			   0x06
-#define INFO_FIX_PPS		       0x07
-#define INFO_FIX_RTK_FLOAT		   0x08
-#define INFO_FIX_RTK_FIX		   0x09
-#define INFO_FIX_DEAD_RECKONING    0x0A
-#define INFO_FIX_MANUAL        	   0x0B
-#define INFO_FIX_SIM		       0x0C
-#define INFO_FIX_OTHER		       0x0D
-#define INFO_DEVICE_STARTING       0x10
-
+/*
+#define STATE_STARTING   0X00
+#define STATE_GETTINGFIX 0x01 
+#define STATE_SURVEYING  0x02
+#define STATE_OPERATING  0x03
+*/
 
 // UBX sync bytes and message details
 #define UBX_SYNC1            0xB5

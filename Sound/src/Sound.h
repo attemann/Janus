@@ -32,6 +32,8 @@ void loop() {
 }
 */
 
+// Sound.h
+
 #pragma once
 
 #include "SPIFFS.h"
@@ -105,7 +107,6 @@ public:
     }
 
     void speakFix(int fix) {
-        if (fix < FIX_TYPE_NOFIX || fix > FIX_TYPE_OTHER) return;
         playWavFile("/fixtype.wav");
         playNumberFile(fix);
 	}
@@ -118,7 +119,7 @@ public:
         playWavFile("/getting_fix.wav");
     }
 
-    void speakSurveyIn() {
+    void speakSurvey() {
         playWavFile("/survey.wav");
     }
 

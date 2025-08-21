@@ -20,10 +20,16 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="RTKBase.ino" />
+    <ClCompile Include="RTKBaseTask.ino" />
+    <ClCompile Include="DisplayTask.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="__vm\.RTKBase.vsarduino.h">
+    <ClInclude Include="__vm\.RTKBaseTask.vsarduino.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DisplayTask.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

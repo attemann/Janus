@@ -25,6 +25,8 @@ public:
     bool receive(uint8_t* data, size_t& len);
     uint8_t getSenderId() const;
     uint8_t getTargetId() const;
+    uint8_t getLastRSSI() const;
+
 
     // --------- Config / Debug ---------
     void setNetworkId(uint8_t networkId);

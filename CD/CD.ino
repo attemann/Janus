@@ -7,15 +7,17 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <RFM69.h>  
-#include <RTKF3F.h>
-#include "RadioModule.h"
-#include <Sound.h>
 
-#define APPNAME  "CD 1.0"  
-#define MY_WAV_FILE     "/cd.unit.wav"
+#include <RTKF3F.h>
+#include <RadioTask.h>
+#include <SoundTask.h>
+
+#define APPNAME      "CD 1.0"  
+#define MY_WAV_FILE  "/cd.unit.wav"
 
 #define THIS_NODE_ID NODEID_CD
 
+extern RadioModule* radioMod;
 inline constexpr int8_t RFM69_MISO= 19;
 inline constexpr int8_t RFM69_MOSI= 23;
 inline constexpr int8_t RFM69_SCK = 18;
@@ -24,8 +26,9 @@ inline constexpr int8_t RFM69_IRQ =  4;
 inline constexpr int8_t RFM69_IRQN = digitalPinToInterrupt(RFM69_IRQ);
 inline constexpr int8_t RFM69_RST = -1;
 
-RadioModule radioMod(RFM69_CSS, RFM69_IRQ, true);
-DecimalSpeaker speaker;
+extern RadioModule* radioMod;
+
+SoundTask sound;
 
 void haltUnit(String msg1, String msg2) {
     Serial.print(msg1);
@@ -41,108 +44,89 @@ void setup() {
     delay(500);
 
     Serial.printf("%s starting\r\n", APPNAME);
-    speaker.begin(0.2, 26, 22, 25);
+    sound.begin(
+        /*gain*/ 0.8f,
+        /*bclk*/ 26,
+        /*lrclk*/22,
+        /*din*/  25,
+        /*prio*/ 2,
+        /*stackWords*/ 4096,
+        /*core*/ 1
+    );
 
-    speaker.playWavFile(MY_WAV_FILE);
-    speaker.playWavFile("/starting.wav");   
-    delay(500);
+	sound.send({ SoundCmdType::WAV, 0, 0.0f, MY_WAV_FILE }, 0);
+	sound.send({ SoundCmdType::WAV, 0, 0.0f, "/starting.wav" }, 0);
+
 
     // Radio
-    if (!radioMod.init(RFM69_MISO, RFM69_MOSI, RFM69_SCK,
-        THIS_NODE_ID, NETWORK_ID, FREQUENCY_CD)) {
-        Serial.println("Radio init failed");        
-        speaker.playWavFile(MY_WAV_FILE);
-        speaker.playWavFile("/radio.wav");
-		speaker.speakError(ERROR_RADIO_INIT);
-        haltUnit("Radio init", "Failure, freeze");
+    if (!radioStartTask(RFM69_MISO, RFM69_MOSI, RFM69_SCK,RFM69_CSS, RFM69_IRQ,
+                        THIS_NODE_ID, NETWORK_ID, FREQUENCY_CD)) {
+        sound.send({ SoundCmdType::WAV, 0, 0.0f, "/radio.wav" }, 0);
+        sound.send({ SoundCmdType::ERROR, ERR_RADIOINIT, 0.0f }, 0);
+        while (true);  // halt
     }
-    else Serial.println("Radio init ok");
+    Serial.println("Radio init ok");
 }
 
 
 void loop() {
-    uint8_t data[64];
-    size_t len = sizeof(data);
-    int senderId = 0;
-    const char* originWav;
+    RxPacket pkt;
+    if (radioReceive(pkt, 0)) {          // non-blocking; use portMAX_DELAY to block
+        Serial.printf("RX from %u, len=%u, RSSI=%d\n", pkt.from, pkt.len, pkt.rssi);
 
-    if (radioMod.receive(data, len)) {
-        if (len > 0) {
+        const char* originWav = "/unknown.wav";
+        if (pkt.from == NODEID_RTKBASE) originWav = "/RTK_base.wav";
+        else if (pkt.from == NODEID_GU)      originWav = "/glider_unit.wav";
+        sound.send({ SoundCmdType::WAV, 0, 0.0f, originWav }, 0);
 
-            senderId = radioMod.getSenderId();
-            Serial.printf("Got senderid=%d\r\n", senderId);
-            if (senderId == NODEID_RTKBASE) originWav = "/RTK_base.wav";
-            if (senderId == NODEID_GU)      originWav = "/glider_unit.wav";
-
-            speaker.playWavFile(originWav);
-
-            switch (data[0]) {
-            case MSG_INFORMATION: 
-                Serial.printf("MSG_INFORMATION [%02X] from %d\n", data[1], senderId);
-                switch (data[1]) {
-                case INFO_DEVICE_STARTING:
-                    speaker.speakStarting();
-                    break;
-                case INFO_TRANSITION_GETTINGFIX:
-                    speaker.speakGettingFix();
-					speaker.speakFix(data[1] - 4);  
-					break;
-                case INFO_TRANSITION_SURVEYING:
-                    speaker.speakSurveyIn();
-                    break;
-                case INFO_TRANSITION_OPERATING:
-                    speaker.speakOperating();
-                    break;
-                case INFO_FIX_NOFIX:
-				case INFO_FIX_GPS:
-				case INFO_FIX_DGPS:
-				case INFO_FIX_RTK_FLOAT:
-				case INFO_FIX_RTK_FIX:
-				case INFO_FIX_DEAD_RECKONING:
-				case INFO_FIX_MANUAL:   
-				case INFO_FIX_SIM:  
-				case INFO_FIX_OTHER:    
-				case INFO_FIX_PPS:
-                    speaker.speakFix(data[1] - 4);
-                    break;
-                default:
-                    Serial.printf("Unknown info code [%02X] from %d\n", data[1], senderId);
-                    speaker.speakInfo(data[1]);
-                    break;
+        if (pkt.len >= 1) {
+            switch (pkt.data[0]) {
+            case MSG_DEVICESTATE:
+                if (pkt.len >= 2) {
+                    switch (pkt.data[1]) {
+                    case DEVICE_STARTING:   sound.send({ SoundCmdType::STARTING }, 0);  break;
+                    case DEVICE_GETTINGFIX: sound.send({ SoundCmdType::GET_FIX }, 0);   break;
+                    case DEVICE_SURVEYING:  sound.send({ SoundCmdType::SURVEY }, 0);    break;
+                    case DEVICE_OPERATING:  sound.send({ SoundCmdType::OPERATING }, 0); break;
+                    default: sound.send({ SoundCmdType::ERROR, ERR_UNKNOWN, 0.0f }, 0); break;
+                    }
                 }
                 break;
+
             case MSG_ERROR:
-                Serial.printf("MSG_ERROR       [%02X] from %d\n", data[1], senderId);
-                switch (data[1]) {
-                    case ERROR_RADIO_INIT:
-                        speaker.playWavFile("/radio.wav");
-					    break;
-                    case ERROR_UART:    
-						speaker.playWavFile("/gps.wav");
-                        break;
-                    default:
-                        break;
+                if (pkt.len >= 2) {
+                    switch (pkt.data[1]) {
+                    case ERR_RADIOINIT: sound.send({ SoundCmdType::ERROR, ERR_RADIOINIT }, 0); break;
+                    case ERR_UART:      sound.send({ SoundCmdType::ERROR, ERR_UART }, 0);      break;
+                    default:            sound.send({ SoundCmdType::ERROR, pkt.data[1] }, 0);   break;
+                    }
                 }
-                speaker.speakError(data[1]);
-
-                break;
-			case MSG_SIV: 
-                Serial.printf("MSG_SIV         [%02X] from %d\n", data[1], senderId);
-
-                speaker.playNumberFile(data[1]);
-                speaker.playWavFile("/satellites.wav");
                 break;
 
-            case MSG_SURVEYING:
-                Serial.printf("MSG_SURVEYING         [%02X] from %d\n", data[1], senderId);
-                speaker.playWavFile("/survey.wav");
-                speaker.playNumberFile(data[1]);
-                speaker.playWavFile("/seconds.wav");
+            case MSG_SIV:
+                if (pkt.len >= 2) {
+                    sound.send({ SoundCmdType::WAV, 0, 0.0f, "/gps.wav" }, 0);
+                    sound.send({ SoundCmdType::INT, pkt.data[1] }, 0);
+                    sound.send({ SoundCmdType::WAV, 0, 0.0f, "/satellites.wav" }, 0);
+                }
+                break;
+
+            case MSG_FIXTYPE:
+                if (pkt.len >= 2) {
+                    sound.send({ SoundCmdType::WAV, 0, 0.0f, "/fixtype.wav" }, 0);
+                    sound.send({ SoundCmdType::FIX, pkt.data[1] }, 0);
+                }
                 break;
 
             default:
-                Serial.printf("Unknown message [%02X] from %d\n", data[1], senderId);
-                speaker.speakError(ERROR_UNKNOWN);
+                if (pkt.len >= 2) {
+                    Serial.printf("Unknown msg [%02X] code [%02X] from %u\n",
+                        pkt.data[0], pkt.data[1], pkt.from);
+                }
+                else {
+                    Serial.printf("Unknown msg [%02X] from %u\n", pkt.data[0], pkt.from);
+                }
+                sound.send({ SoundCmdType::ERROR, ERR_UNKNOWN, 0.0f }, 0);
                 break;
             }
         }

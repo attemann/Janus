@@ -36,6 +36,12 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)src\Const.h">
       <Filter>Header Files</Filter>
     </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\DisplayTask.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\RadioTask.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(MSBuildThisFileDirectory)src\GNSSModule.h">
@@ -56,10 +62,16 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)src\ConfigMgr.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="$(MSBuildThisFileDirectory)src\MessageTypes.h">
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\Structs.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="$(MSBuildThisFileDirectory)src\_macros.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\DisplayTask.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\RadioTask.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

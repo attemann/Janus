@@ -20,5 +20,9 @@
   <ItemGroup>
     <!-- <ClInclude Include="$(MSBuildThisFileDirectory)Sound.h" /> -->
     <ClInclude Include="$(MSBuildThisFileDirectory)src\Sound.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)src\SoundTask.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)src\SoundTask.cpp" />
   </ItemGroup>
 </Project>

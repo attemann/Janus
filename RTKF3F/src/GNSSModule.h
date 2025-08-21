@@ -3,6 +3,17 @@
 #include <Arduino.h>  
 #include <HardwareSerial.h>  
 
+#define FIXTYPE_NOFIX           0
+#define FIXTYPE_GPS             1
+#define FIXTYPE_DGPS            2
+#define FIXTYPE_PPS             3
+#define FIXTYPE_RTK_FLOAT       4
+#define FIXTYPE_RTK_FIX         5
+#define FIXTYPE_DEAD_RECK       6
+#define FIXTYPE_MANUAL          7
+#define FIXTYPE_SIM             8
+#define FIXTYPE_OTHER           9
+
 #define COMMANDDELAY 100
 #define RESETDELAY 5000
 
@@ -132,12 +143,12 @@ public:
 
 private:
     HardwareSerial& _serial;
-    char _nmeaBuffer[100];
-    size_t _nmeaIdx;
+    //char _nmeaBuffer[100];
+    //size_t _nmeaIdx;
     uint32_t calculateCRC24Q(const uint8_t* data, size_t len);
     static constexpr int maxRTCMs = 10;
     RTCMMessage _rtcmList[maxRTCMs];
-    int _rtcmCount = 0;
+    //int _rtcmCount = 0;
     uint8_t _gpsBuf[1024];
     size_t _gpsBufLen = 0;
 };

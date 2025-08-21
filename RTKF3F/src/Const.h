@@ -1,4 +1,4 @@
-//Slope.h
+//Const.h
 #pragma once
 #include <Arduino.h>
 
@@ -21,3 +21,4 @@ static constexpr uint32_t FREQUENCY_CD = 868200000;
 #define DETECTOR_BUFFER_SIZE 30  // 3 secs with 0.1s interval
 #define THRESHOLD_AIRBORNE 9.0f  // 3 m/s avg over 3 secs
 #define THRESHOLD_LANDED 1.0f    // 1 m/s avg over 3 secs
+
