@@ -36,7 +36,8 @@ void loop() {
 
 #pragma once
 
-#include "SPIFFS.h"
+#include <Arduino.h>
+#include <SPIFFS.h>
 #include "AudioFileSourceSPIFFS.h"
 #include "AudioGeneratorWAV.h"
 #include "AudioOutputI2S.h"

@@ -8,22 +8,41 @@
 
 
 // Message Types
-enum  MessageType : uint8_t {
-    MSG_RTCM = 0xD3,              // Standard RTCM message
-    MSG_RTCM_FRAGMENT = 0x0A,     // Fragmented RTCM
-    MSG_ARENA_SETTINGS = 0xA0,    // Arena configuration
-    MSG_GLIDER_SETTINGS = 0xA1,   // Glider configuration
-    MSG_REQ_POS = 0xA2,           // Request position
-    MSG_GU_GPS_SETTINGS = 0xA3,   // GPS settings for GU
-    MSG_INFORMATION = 0xF0,       // General information
-    MSG_ERROR = 0xF1,             // Error message
-    MSG_SIV = 0xF2,               // Satellites in view
-	MSG_DEVICESTATE = 0xF3,       // Device status
-	MSG_FIXTYPE = 0xF4,           // Fix type information
-	MSG_SURVEY = 0xF5,            // Surveying status
-    MSG_G2B_EVENT = 0xB1,         // Glider-to-base event
-    MSG_G2B_RELPOS = 0xB2,        // Glider-to-base relative position
-    MSG_G2B_MISC = 0xB3           // Miscellaneous Glider-to-base
+enum MessageType : uint8_t {
+    // --- Core data (0x00–0x1F) ---
+    MSG_RTCM = 0xD3, // Standard RTCM message
+    MSG_RTCM_FRAGMENT = 0x0A, // Fragmented RTCM
+
+    // --- Configuration & requests (0x20–0x3F) ---
+    MSG_ARENA_SETTINGS = 0x20, // Arena configuration
+    MSG_GLIDER_SETTINGS = 0x21, // Glider configuration
+    MSG_REQ_POS = 0x22, // Request position
+    MSG_GU_GPS_SETTINGS = 0x23, // GPS settings for GU
+
+    // --- Status & info (0x40–0x5F) ---
+    MSG_INFORMATION = 0x40, // General information
+    MSG_ERROR = 0x41, // Error message
+    MSG_SIV = 0x42, // Satellites in view
+    MSG_DEVICESTATE = 0x43, // Device status
+    MSG_FIXTYPE = 0x44, // Fix type information
+    MSG_SURVEY = 0x45, // Surveying status
+
+    // --- Glider-to-base messages (0x60–0x6F) ---
+    MSG_G2B_EVENT = 0x60, // Glider-to-base event
+    MSG_G2B_RELPOS = 0x61, // Glider-to-base relative position
+    MSG_G2B_MISC = 0x62, // Miscellaneous Glider-to-base
+
+    // --- Event system (0x80–0x9F) ---
+    MSG_EVT_NONE = 0x80, // Reserved / no event
+    MSG_EVT_CROSS_A_IN = 0x81, // Cross A base into task
+    MSG_EVT_CROSS_A_OUT = 0x82, // Cross A base out of task
+    MSG_EVT_CROSS_B_IN = 0x83, // Cross B base into task
+    MSG_EVT_CROSS_B_OUT = 0x84, // Cross B base out of task
+    MSG_EVT_SAFETY_IN_TO = 0x85, // Cross into safety area (danger zone)
+    MSG_EVT_SAFETY_OUT_OF = 0x86, // Cross out of safety area (safe zone)
+    MSG_EVT_AIRBORNE = 0x87, // Glider airborne (takeoff)
+    MSG_EVT_LANDED = 0x88, // Glider landed
+    MSG_EVT_ACK = 0x89  // Acknowledgment of flight settings
 };
 
 enum DeviceState {

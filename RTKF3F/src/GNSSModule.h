@@ -1,25 +1,36 @@
-// GNSSModule.h (updated)
+// GNSSModule.h
 #pragma once
-#include <Arduino.h>  
-#include <HardwareSerial.h>  
+#include <Arduino.h>
+#include <HardwareSerial.h>
 
-#define FIXTYPE_NOFIX           0
-#define FIXTYPE_GPS             1
-#define FIXTYPE_DGPS            2
-#define FIXTYPE_PPS             3
-#define FIXTYPE_RTK_FLOAT       4
-#define FIXTYPE_RTK_FIX         5
-#define FIXTYPE_DEAD_RECK       6
-#define FIXTYPE_MANUAL          7
-#define FIXTYPE_SIM             8
-#define FIXTYPE_OTHER           9
+//--------------------------------------
+// Timings & fix-type constants
+//--------------------------------------
+#define COMMANDDELAY 100u
+#define RESETDELAY   5000u
 
-#define COMMANDDELAY 100
-#define RESETDELAY 5000
+//--------------------------------------
+// FIXTYPE
+//--------------------------------------
+enum class FIXTYPE : uint8_t {
+    NOFIX = 0,
+    GPS = 1,
+    DGPS = 2,
+    PPS = 3,
+    RTK_FLOAT = 4,
+    RTK_FIX = 5,
+    DEAD_RECK = 6,
+    MANUAL = 7,
+    SIM = 8,
+    OTHER = 9
+};
 
+//--------------------------------------
+// GNSSModule
+//--------------------------------------
 class GNSSModule {
 public:
-
+    // -------- Message framing --------
     enum class GNSSMessageType {
         NONE,
         NMEA,
@@ -35,13 +46,14 @@ public:
     struct GNSSMessage {
         GNSSMessageType type = GNSSMessageType::NONE;
         const uint8_t* data = nullptr;
-        size_t length = 0;
+        size_t          length = 0;
     };
 
+    // -------- Parsed fix snapshot --------
     struct GNSSFix {
         // UTC time
-        int hour = 0;
-        int minute = 0;
+        int   hour = 0;
+        int   minute = 0;
         float second = 0;
 
         // Position from GGA
@@ -49,7 +61,7 @@ public:
         float lon = 0.0f;
         float alt = 0.0f;
 
-        // Optional: RELPOSNED
+        // Optional RELPOSNED (if you use it elsewhere)
         float relNorth = 0.0f;
         float relEast = 0.0f;
         float relDown = 0.0f;
@@ -58,64 +70,55 @@ public:
         float adjEast = 0.0f;
         float adjDown = 0.0f;
 
-        int SIV = 0;     // Satelites in view
-        int HDOP = 0;      // HDOP in cm
-        int fixType = 0;   // GGA fix quality
-
-        // Flags
-        bool gpsFix = false;
-        bool diffUsed = false;
-        bool rtkFloat = false;
-        bool rtkFix = false;
+        int SIV = 0;   // Satellites used (from GGA field 7)
+        int HDOP = 0;   // HDOP * 100 (dimensionless, not "cm")
+        FIXTYPE type = FIXTYPE::NOFIX;   // GGA fix quality code
     };
 
-    struct RTCMMessage {
-        const char* name;
-        float frequencyHz;
-        bool enabled;
-    };
+    // -------- Lifecycle & I/O --------
+    explicit GNSSModule(HardwareSerial& serial);
+    void   begin(uint32_t baud, int rx, int tx);
+    bool   gpsDataAvailable();
+    int    detectUARTPort();
+    void   sendCommand(const String& command);
+    void   sendReset();
 
-    GNSSModule(HardwareSerial& serial);
-    void begin(uint32_t baud,int rx, int tx);
-	bool gpsDataAvailable();
-    int detectUARTPort();
-    void sendCommand(const String& command);
-    void sendReset();
-    bool parseGGA(const uint8_t* buf, size_t len, GNSSFix& fi);
-    void printAscii();
+    // -------- Unified reader & parsers --------
+    GNSSMessage readGPS(); // Returns one message (NMEA/RTCM/command/UBX) if available
+    bool        readNMEA(uint8_t* buffer, size_t& len);
+    bool        readCommandResponse(uint8_t* buffer, size_t& len);
+    bool        parseGGA(const uint8_t* buf, size_t len, GNSSFix& fix);
+    void        printAscii();
 
-    bool readNMEA(uint8_t* buffer, size_t& len);
-    bool readCommandResponse(uint8_t* buffer, size_t& len);
-    bool readRTCM(uint8_t* buffer, size_t& len);
-
-    uint16_t getRTCMType(const uint8_t* buf, size_t len);
+    // -------- RTCM utilities --------
+    uint16_t    getRTCMType(const uint8_t* buf, size_t len);
     const char* getRTCMName(uint16_t type);
-    uint16_t getRTCMBits(const uint8_t* buffer, int startBit, int bitLen);
-    static String fixTypeToString(int fixType);
-    void showFix(const GNSSFix& fix);
-    bool isValidRTCM(const uint8_t* data, size_t len);
-    const uint8_t* getBuffer() const { return _gpsBuf; }
-    size_t getBufLen() const { return _gpsBufLen; }
-    GNSSMessage readGPS();
+    uint16_t    getRTCMBits(const uint8_t* buffer, int startBit, int bitLen);
+    bool        isValidRTCM(const uint8_t* data, size_t len);
 
+    // -------- Misc helpers --------
+    void showFix(const GNSSFix& fix);
+    static String   fixTypeToString(FIXTYPE fix);
+    const uint8_t* getBuffer()  const { return _gpsBuf; }
+    size_t          getBufLen()  const { return _gpsBufLen; }
+
+    // ------------------------------------------
+    // Nested RTCM handler (configure/log messages)
+    // ------------------------------------------
     class RTCMHandler {
     public:
         struct Entry {
             const char* name;
-            uint16_t id;
-            float frequency;
-            bool enabled;
-            const char* description;  // Human-readable description
-            uint32_t txCount = 0;     // Transmit counter (optional)
+            uint16_t    id;
+            float       frequency;       // Hz
+            bool        enabled;
+            const char* description;     // Human-readable description
+            uint32_t    txCount = 0;     // Sent counter (optional)
         };
 
         static constexpr size_t MAX_MSGS = 20;
-        Entry messages[MAX_MSGS];
-        size_t count = 0;
 
-        GNSSModule* parent = nullptr;
-
-        RTCMHandler(GNSSModule* gnss);
+        explicit RTCMHandler(GNSSModule* gnss);
 
         void add(const char* name, uint16_t id, float freq, bool enabled, const char* desc);
 
@@ -130,27 +133,37 @@ public:
 
         void printList(bool showOnlyEnabled);
 
-        int findById(uint16_t id) const;
-        int findByName(const char* name) const;
+        int  findById(uint16_t id) const;
+        int  findByName(const char* name) const;
+
         void getNextRTCMCount(uint16_t* rtcmId, uint32_t* count);
         void incrementSentCount(uint16_t type);
 
+        // Expose list for status UIs, if needed
+        Entry  messages[MAX_MSGS];
+        size_t count = 0;
+
+        GNSSModule* parent = nullptr;
+
     private:
-        size_t _lastStatusIdx = 0; // Index of last shown message
+        size_t _lastStatusIdx = 0; // Index of last iterated message
     };
 
     RTCMHandler rtcmHandler;
 
 private:
-    HardwareSerial& _serial;
-    //char _nmeaBuffer[100];
-    //size_t _nmeaIdx;
+    // CRC24Q is only used internally by isValidRTCM()
     uint32_t calculateCRC24Q(const uint8_t* data, size_t len);
-    static constexpr int maxRTCMs = 10;
-    RTCMMessage _rtcmList[maxRTCMs];
-    //int _rtcmCount = 0;
+
+    HardwareSerial& _serial;
+
+    // Single shared read buffer for readGPS()/printAscii()
     uint8_t _gpsBuf[1024];
-    size_t _gpsBufLen = 0;
+    size_t  _gpsBufLen = 0;
+
+    // Legacy/unused placeholders kept out to avoid confusion:
+    // struct RTCMMessage { const char* name; float frequencyHz; bool enabled; };
+    // static constexpr int maxRTCMs = 10;
+    // RTCMMessage _rtcmList[maxRTCMs];
+    // int _rtcmCount = 0;
 };
-
-

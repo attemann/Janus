@@ -63,17 +63,17 @@ void SoundTask::taskRunner(void* arg) {
 void SoundTask::handle(const SoundCommand& cmd) {
     switch (cmd.type) {
     case SoundCmdType::WAV:
-        if (cmd.path) self->_speaker.playWavFile(cmd.path);
+        if (cmd.path) _speaker.playWavFile(cmd.path);
         break;
-    case SoundCmdType::NUMBER:   self->_speaker.playNumberFile(cmd.intValue); break;
-    case SoundCmdType::INT:      self->_speaker.speakInt(cmd.intValue); break;
-    case SoundCmdType::TIME:     self->_speaker.speakTime(cmd.floatValue); break;
-    case SoundCmdType::ERROR:    self->_speaker.speakError(cmd.intValue); break;
-    case SoundCmdType::INFO:     self->_speaker.speakInfo(cmd.intValue); break;
-    case SoundCmdType::FIX:      self->_speaker.speakFix(cmd.intValue); break;
-    case SoundCmdType::STARTING: self->_speaker.speakStarting(); break;
-    case SoundCmdType::GET_FIX:  self->_speaker.speakGettingFix(); break;
-    case SoundCmdType::SURVEY:   self->_speaker.speakSurvey(); break;
-    case SoundCmdType::OPERATING:self->_speaker.speakOperating(); break;
+    case SoundCmdType::NUMBER:    _speaker.playNumberFile(cmd.intValue); break;
+    case SoundCmdType::INT:       _speaker.speakInt(cmd.intValue); break;
+    case SoundCmdType::TIME:      _speaker.speakTime(cmd.floatValue); break;
+    case SoundCmdType::ERROR:     _speaker.speakError(cmd.intValue); break;
+    case SoundCmdType::INFO:      _speaker.speakInfo(cmd.intValue); break;
+    case SoundCmdType::FIX:       _speaker.speakFix(cmd.intValue); break;
+    case SoundCmdType::STARTING:  _speaker.speakStarting(); break;
+    case SoundCmdType::GET_FIX:   _speaker.speakGettingFix(); break;
+    case SoundCmdType::SURVEY:    _speaker.speakSurvey(); break;
+    case SoundCmdType::OPERATING: _speaker.speakOperating(); break;
     }
 }

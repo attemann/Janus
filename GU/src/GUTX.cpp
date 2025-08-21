@@ -1,48 +1,69 @@
 // GUTX.cpp
 #include <Arduino.h>
 #include <RFM69.h> 
+
 #include <RTKF3F.h>
-
 #include "RadioModule.h"
-
 #include "GUTX.h"
 
 extern RadioModule radioMod;
 
+static inline int16_t cm_to_dm_i16(float cm) {
+    // round to nearest decimeter and clamp
+    long v = lroundf(cm / 10.0f);
+    if (v > INT16_MAX) v = INT16_MAX;
+    if (v < INT16_MIN) v = INT16_MIN;
+    return (int16_t)v;
+}
 
-void txEvent(EventCode code, uint8_t status_flags) {
+void txMsg(MessageType code) {
+    uint8_t msg[1];
+	msg[0] = static_cast<uint8_t>(code);
+    radioMod.sendWithReturnFreq(NODEID_CD, FREQUENCY_CD, FREQUENCY_CD, msg, sizeof(msg));
+}
+
+// Pack N/E/D in centimeters (int32_t, little-endian) and send (12 bytes).
+void txRelPos32(const GNSSModule::GNSSFix& fix, bool isRelativeToBase) {
     uint8_t msg[6];
-    encodeEventMessage(msg, NODEID_GU,
-        static_cast<uint8_t>(code),  // cast added
-        status_flags);
-    radioMod.sendWithReturnFreq(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, msg, sizeof(msg));
+
+    float n_cm = isRelativeToBase ? fix.relNorth : fix.adjNorth;
+    float e_cm = isRelativeToBase ? fix.relEast : fix.adjEast;
+    float d_cm = isRelativeToBase ? fix.relDown : fix.adjDown;
+
+    int16_t n_dm = cm_to_dm_i16(n_cm);
+    int16_t e_dm = cm_to_dm_i16(e_cm);
+    int16_t d_dm = cm_to_dm_i16(d_cm);
+
+    // little-endian pack: N,E,D (int16_t each)
+    msg[0] = (uint8_t)(n_dm & 0xFF);
+    msg[1] = (uint8_t)((n_dm >> 8) & 0xFF);
+    msg[2] = (uint8_t)(e_dm & 0xFF);
+    msg[3] = (uint8_t)((e_dm >> 8) & 0xFF);
+    msg[4] = (uint8_t)(d_dm & 0xFF);
+    msg[5] = (uint8_t)((d_dm >> 8) & 0xFF);
+
+    // radioMod is an object, not a pointer; also don't forget the semicolon.
+    radioMod.sendWithReturnFreq(NODEID_CD, FREQUENCY_CD, FREQUENCY_CD, msg, sizeof(msg));
 }
 
-void txRelPos(GNSSModule::GNSSFix fix, bool isRelativeToBase) {
-/*  uint8_t msg[6];
-  int n,e,d;
+void fixStatus(GNSSModule::GNSSFix fix) {
+    uint8_t s = 0; // 0 = no fix
 
-  if (isRelativeToBase) {   // relative position to base
-    n = fix.relNorth;
-    e = fix.relEast;
-    d = fix.relDown;
-  } else {
-    n = fix.adjNorth;  // relative position to pilot
-    e = fix.adjEast;
-    d = fix.adjDown;
-  }
+    switch (fix.type) {
+    case FIXTYPE::NOFIX:       s = 0; break;
+    case FIXTYPE::GPS:         s = 1; break; 
+    case FIXTYPE::DGPS:        s = 2; break;
+    case FIXTYPE::PPS:         s = 3; break;
+    case FIXTYPE::RTK_FLOAT:   s = 4; break;
+    case FIXTYPE::RTK_FIX:     s = 5; break;
+    case FIXTYPE::DEAD_RECK:   s = 6; break;
+    case FIXTYPE::MANUAL:      s = 7; break;
+    case FIXTYPE::SIM:         s = 8; break;
+    case FIXTYPE::OTHER:       s = 9; break;
+    }
 
-  int16_t n_dm = n / 10;
-  int16_t e_dm = e / 10;
-  int16_t d_dm = d / 10;
-
-  //encodeRelPosMessage(msg, slope.getGliderId(), n_dm, e_dm, d_dm, fixStatus(fix));
-  radioMod.sendWithReturnFreq(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, msg, sizeof(msg));
-*/
-}
-
-void txMsg(uint8_t msgCode, uint8_t d) {
-  //uint8_t msg[6];
-  //encodeMiscMessage(msg, slope.getGliderId(), d);
-  //radioMod.sendWithReturnFreq(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, msg, sizeof(msg));
+    uint8_t msg[2];
+	msg[0] = static_cast<uint8_t>(MessageType::MSG_FIXTYPE);
+    msg[1] = s;
+    radioMod.sendWithReturnFreq(NODEID_CD, FREQUENCY_CD, FREQUENCY_CD, msg, sizeof(msg));
 }

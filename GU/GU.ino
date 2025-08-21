@@ -1,6 +1,7 @@
 ﻿//GU.ino
 
 #include <Arduino.h>
+#include <SPI.h>
 #include <RFM69.h>
 #include <RTKF3F.h>
 #include "GU.h"
@@ -53,20 +54,21 @@ void setup() {
     ////////////////////////////////////
 
     if (!radioMod.init(RFM69_MISO, RFM69_MOSI, RFM69_SCK, THIS_NODEID, NETWORK_ID, FREQUENCY_RTCM)) {
-        Serial.println("Radio init failed");
+        Serial.println(APPNAME " Radio init failed");
         while (1);
     }
-    radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, INFO_DEVICE_STARTING);
+    radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, static_cast <uint8_t>(DeviceState::DEVICE_STARTING));
     delay(1000);
     // GNSS 
     gnss.begin(GNSS_BAUD, UART_RX, UART_TX);
-	Serial.println("GNSS port starting...");
+	Serial.println(APPNAME "GNSS starting...");
 
     if (gnss.detectUARTPort() == 0) {
-        haltUnit("Gnss port", "Failure, freeze");
-        radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_ERROR, ERROR_COM);
+        radioMod.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_ERROR, static_cast <uint8_t>(ErrorCode::ERR_UART));
+        Serial.println("GNSS init failed");
+        while (1);
     }
-    else Serial.println("Gnss port ok");
+    else Serial.println("GNSS port ok");
 
     gnss.sendCommand("unlog\r\n");
     gnss.sendCommand("mode rover\r\n");
@@ -165,7 +167,7 @@ void loop() {
                //txRelPos(fix, true);
                break;
            default:
-               Serial.printf("GU:default: Unknown packet: 0x%02X (%s) len=%u", radioBuf[0], getMessageName(radioBuf[0]), radioLen);
+               Serial.printf("GU:default: Unknown packet: 0x%02X\r\n", radioBuf[0]);
                for (uint8_t i = 0; i < radioLen; i++) {
                    Serial.printf(" %02X", radioBuf[i]);
                }

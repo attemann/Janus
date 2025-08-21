@@ -1,5 +1,6 @@
 ﻿//RTKBase.ino
 #include <Arduino.h>
+#include <SPI.h>
 #include <RFM69.h>
 
 #include <RTKF3F.h>
@@ -146,10 +147,8 @@ void loop() {
                 sendToDisplay("Awaiting $GNGGA", String((const char*)gnssData.data));
             }
 
-            gnss.showFix(fix);
-
-            if (fix.fixType > 0) {
-                if (fix.fixType == FIXTYPE_GPS) {
+            if (fix.type > FIXTYPE::NOFIX) {
+                if (fix.type == FIXTYPE::GPS) {
                     delay(1000);
                     radioSendMsg(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_DEVICESTATE, DEVICE_SURVEYING);
 					delay(1000);
@@ -219,7 +218,7 @@ void loop() {
                 gnss.rtcmHandler.incrementSentCount(rtcmtype);
                 updateRTCMTypeCountDisplay();
 
-                radioSendRTCM(gnssData.data, gnssData.length);
+                radioTxRtcmWrite(gnssData.data, gnssData.length);
             }
             else Serial.println(ANSI_RED "RTCM: Invalid data received" ANSI_RESET);
    		}
@@ -229,21 +228,9 @@ void loop() {
         break;
     }
 
-    if (fix.fixType != oldFix.fixType) {
-		switch (fix.fixType) {
-            case FIXTYPE_NOFIX:     radioSendMsg(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_FIXTYPE, FIXTYPE_NOFIX); break;
-            case FIXTYPE_GPS:       radioSendMsg(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_FIXTYPE, FIXTYPE_GPS); break;
-			case FIXTYPE_DGPS:      radioSendMsg(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_FIXTYPE, FIXTYPE_DGPS);break;
-            case FIXTYPE_PPS:       radioSendMsg(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_FIXTYPE, FIXTYPE_PPS);break;
-            case FIXTYPE_RTK_FLOAT: radioSendMsg(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_FIXTYPE, FIXTYPE_RTK_FLOAT); break;
-            case FIXTYPE_RTK_FIX:   radioSendMsg(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_FIXTYPE, FIXTYPE_RTK_FIX); break;
-            case FIXTYPE_DEAD_RECK: radioSendMsg(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_FIXTYPE, FIXTYPE_DEAD_RECK);break;
-            case FIXTYPE_MANUAL:    radioSendMsg(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_FIXTYPE, FIXTYPE_MANUAL);break;
-            case FIXTYPE_SIM:       radioSendMsg(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_FIXTYPE, FIXTYPE_SIM);  break;
-            default:                radioSendMsg(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_FIXTYPE, FIXTYPE_OTHER); break;
-        }
+    if (fix.type != oldFix.type) {
+        radioSendMsg(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_FIXTYPE, static_cast<uint8_t>(fix.type));
 		oldFix = fix;
-
 	}
     delay(100);
 }

@@ -57,7 +57,6 @@ void setup() {
 	sound.send({ SoundCmdType::WAV, 0, 0.0f, MY_WAV_FILE }, 0);
 	sound.send({ SoundCmdType::WAV, 0, 0.0f, "/starting.wav" }, 0);
 
-
     // Radio
     if (!radioStartTask(RFM69_MISO, RFM69_MOSI, RFM69_SCK,RFM69_CSS, RFM69_IRQ,
                         THIS_NODE_ID, NETWORK_ID, FREQUENCY_CD)) {
@@ -72,62 +71,53 @@ void setup() {
 void loop() {
     RxPacket pkt;
     if (radioReceive(pkt, 0)) {          // non-blocking; use portMAX_DELAY to block
-        Serial.printf("RX from %u, len=%u, RSSI=%d\n", pkt.from, pkt.len, pkt.rssi);
+       
+        switch (pkt.from) {
+		    case NODEID_RTKBASE:
+                sound.send({ SoundCmdType::WAV, 0, 0.0f, "/RTK_base.wav" }, 0);
+            break;
+		    case NODEID_GU:      
+                sound.send({ SoundCmdType::WAV, 0, 0.0f, "/glider_unit.wav" }, 0);
+            break;
+		    default:
+                sound.send({ SoundCmdType::WAV, 0, 0.0f, "/unknown.wav" }, 0);
+            break;
+        }
 
-        const char* originWav = "/unknown.wav";
-        if (pkt.from == NODEID_RTKBASE) originWav = "/RTK_base.wav";
-        else if (pkt.from == NODEID_GU)      originWav = "/glider_unit.wav";
-        sound.send({ SoundCmdType::WAV, 0, 0.0f, originWav }, 0);
+        Serial.printf("RX from %u, len=%u, RSSI=%d\r\n", pkt.from, pkt.len, pkt.rssi);
 
-        if (pkt.len >= 1) {
+        if (pkt.len == 2) {
             switch (pkt.data[0]) {
             case MSG_DEVICESTATE:
-                if (pkt.len >= 2) {
-                    switch (pkt.data[1]) {
-                    case DEVICE_STARTING:   sound.send({ SoundCmdType::STARTING }, 0);  break;
-                    case DEVICE_GETTINGFIX: sound.send({ SoundCmdType::GET_FIX }, 0);   break;
-                    case DEVICE_SURVEYING:  sound.send({ SoundCmdType::SURVEY }, 0);    break;
+                switch (pkt.data[1]) {
+                    case DEVICE_STARTING:   sound.send({ SoundCmdType::STARTING },  0); break;
+                    case DEVICE_GETTINGFIX: sound.send({ SoundCmdType::GET_FIX },   0); break;
+                    case DEVICE_SURVEYING:  sound.send({ SoundCmdType::SURVEY },    0); break;
                     case DEVICE_OPERATING:  sound.send({ SoundCmdType::OPERATING }, 0); break;
-                    default: sound.send({ SoundCmdType::ERROR, ERR_UNKNOWN, 0.0f }, 0); break;
-                    }
-                }
-                break;
-
+                default: sound.send({ SoundCmdType::ERROR, ERR_UNKNOWN, 0.0f },     0); break;
+            }
+            break;
             case MSG_ERROR:
-                if (pkt.len >= 2) {
-                    switch (pkt.data[1]) {
+                switch (pkt.data[1]) {
                     case ERR_RADIOINIT: sound.send({ SoundCmdType::ERROR, ERR_RADIOINIT }, 0); break;
                     case ERR_UART:      sound.send({ SoundCmdType::ERROR, ERR_UART }, 0);      break;
                     default:            sound.send({ SoundCmdType::ERROR, pkt.data[1] }, 0);   break;
-                    }
                 }
-                break;
-
+            break;
             case MSG_SIV:
-                if (pkt.len >= 2) {
-                    sound.send({ SoundCmdType::WAV, 0, 0.0f, "/gps.wav" }, 0);
-                    sound.send({ SoundCmdType::INT, pkt.data[1] }, 0);
-                    sound.send({ SoundCmdType::WAV, 0, 0.0f, "/satellites.wav" }, 0);
-                }
-                break;
-
+                sound.send({ SoundCmdType::WAV, 0, 0.0f, "/gps.wav" }, 0);
+                sound.send({ SoundCmdType::INT, pkt.data[1] }, 0);
+                sound.send({ SoundCmdType::WAV, 0, 0.0f, "/satellites.wav" }, 0);
+            break;
             case MSG_FIXTYPE:
-                if (pkt.len >= 2) {
-                    sound.send({ SoundCmdType::WAV, 0, 0.0f, "/fixtype.wav" }, 0);
-                    sound.send({ SoundCmdType::FIX, pkt.data[1] }, 0);
-                }
-                break;
-
+                sound.send({ SoundCmdType::WAV, 0, 0.0f, "/fixtype.wav" }, 0);
+                sound.send({ SoundCmdType::FIX, pkt.data[1] }, 0);
+            break;
             default:
-                if (pkt.len >= 2) {
-                    Serial.printf("Unknown msg [%02X] code [%02X] from %u\n",
-                        pkt.data[0], pkt.data[1], pkt.from);
-                }
-                else {
-                    Serial.printf("Unknown msg [%02X] from %u\n", pkt.data[0], pkt.from);
-                }
+                Serial.printf("Unknown msg [%02X] code [%02X] from %u\n",
+                pkt.data[0], pkt.data[1], pkt.from);
                 sound.send({ SoundCmdType::ERROR, ERR_UNKNOWN, 0.0f }, 0);
-                break;
+            break;
             }
         }
     }

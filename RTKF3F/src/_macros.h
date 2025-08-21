@@ -46,3 +46,8 @@
 	#define WDBG_PRINTLN(x)     ((void)0)
 	#define WDBG_PRINTF(...)    ((void)0)
 #endif
+
+// Define ANSI color codes (disable if not supported)
+#define ANSI_GREEN  "\x1b[32m"
+#define ANSI_RED    "\x1b[31m"
+#define ANSI_RESET  "\x1b[0m"

@@ -4,16 +4,11 @@
 #ifndef GUTX_H
 #define GUTX_H
 
-  #include <Arduino.h>
-  #include <RTKF3F.h>
+#include <Arduino.h>
+#include <RTKF3F.h>
 
-  // Sends a 5-byte event packet from GU to BS
-  // Parameters:
-  //   glider_id     : 0–255 unique ID of glider
-  //   event         : EventCode enum (4 bits)
-  //   status_flags  : Status bitfield (use STATUS_* constants from EventFormat.h)
-  void txRelPos(GNSSModule::GNSSFix fix, bool isRelativeToBase);
-  void txMsg(uint8_t msgCode);
-  uint8_t fixStatus(GNSSModule::GNSSFix fix);
+void txRelPos32(const GNSSModule::GNSSFix& fix, bool isRelativeToBase);
+void txMsg(MessageType code);
+void fixStatus(GNSSModule::GNSSFix fix);
 
 #endif
