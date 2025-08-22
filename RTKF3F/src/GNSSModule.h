@@ -6,7 +6,7 @@
 //--------------------------------------
 // Timings & fix-type constants
 //--------------------------------------
-#define COMMANDDELAY 100u
+#define COMMANDDELAY 1000u
 #define RESETDELAY   5000u
 
 //--------------------------------------
@@ -79,7 +79,7 @@ public:
     explicit GNSSModule(HardwareSerial& serial);
     void   begin(uint32_t baud, int rx, int tx);
     bool   gpsDataAvailable();
-    int    detectUARTPort();
+    uint8_t    detectUARTPort();
     void   sendCommand(const String& command);
     void   sendReset();
 

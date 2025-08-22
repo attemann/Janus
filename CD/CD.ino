@@ -45,7 +45,7 @@ void setup() {
 
     Serial.printf("%s starting\r\n", APPNAME);
     sound.begin(
-        /*gain*/ 0.8f,
+        /*gain*/ 0.1f,
         /*bclk*/ 26,
         /*lrclk*/22,
         /*din*/  25,

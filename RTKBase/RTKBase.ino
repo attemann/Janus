@@ -22,7 +22,6 @@ inline constexpr int8_t  RFM69_RST = -1;
 
 ConfigManager config(APPNAME);  // NVS namespace
 
-
 // UART
 #define GNSS_BAUD 115200
 #define UART_RX 16
@@ -40,7 +39,6 @@ bool showGngga = false;
 
 unsigned int lastSpeakMs = 0; // Last time we spoke a message 
 #define SPEAK_INTERVAL_MS    10000 // seconds delay between spoken messages
-
 
 DeviceState deviceState = DeviceState::DEVICE_STARTING;
 
@@ -70,7 +68,6 @@ void setup() {
     Serial.printf("%s booting\r\n", APPNAME);
 
     #ifdef WIFI         // Start NVS
-
         if (!config.begin()) {
             Serial.println("❌ Kunne ikke starte NVS-lagring");
             return;
@@ -84,6 +81,7 @@ void setup() {
         Serial.println("🟢 Admin-modus aktivert, åpen WiFi");
     #endif
 
+    startDisplayTask();
     sendToDisplay(APPNAME, "Starting");
 
     if (!radioStartTask(
@@ -96,12 +94,14 @@ void setup() {
     // GNSS
     gnss.begin(GNSS_BAUD, UART_RX, UART_TX);
 
-	int port = gnss.detectUARTPort();
+	uint8_t port = gnss.detectUARTPort();
     if (port == 0) {
-        delay(500);
+        sendToDisplay(APPNAME, "GNSS not found");
+        Serial.printf("%s: GNSS not found\r\n", APPNAME);
         radioSendMsg(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_ERROR, ERR_UART);
-        sendToDisplay(APPNAME, "Gnss port fail");
-	} else Serial.printf("%s: Gnss found, COM%d\r\n", APPNAME, port);
+        delay(500);
+        while (1);
+	} else Serial.printf("%s: GNSS found, COM%d\r\n", APPNAME, port);
 
     deviceState = DeviceState::DEVICE_STARTING;
     delay(200);

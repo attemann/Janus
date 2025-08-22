@@ -134,13 +134,13 @@ bool GNSSModule::gpsDataAvailable() {
 }
 
 void GNSSModule::sendCommand(const String& command) {
-    GDBG_PRINT("GPS: Command ["); GDBG_PRINT(command); GDBG_PRINT("] ");
+    GDBG_PRINT("GPS: Command ["); GDBG_PRINT(command); GDBG_PRINT("]\r\n");
     const unsigned long start = millis();
     _serial.print(command);
     _serial.print("\r\n");
-    while ((millis() - start) < COMMANDDELAY) {
-        if (_serial.available()) GDBG_WRITE(_serial.read());
-    }
+    // while ((millis() - start) < COMMANDDELAY) {
+    //     if (_serial.available()) GDBG_WRITE(_serial.read());
+    // }
 }
 
 void GNSSModule::sendReset() {
@@ -155,32 +155,37 @@ void GNSSModule::sendReset() {
 }
 
 // Probe UM980 logical COMx by sending "unlog comN" and looking for OK
-int GNSSModule::detectUARTPort() {
-    const char* testCommands[] = { "unlog com1", "unlog com2", "unlog com3" };
+uint8_t GNSSModule::detectUARTPort() {
+    static const char* cmds[] = { "versiona com1", "versiona com2", "versiona com3" };
+    const unsigned long windowMs = 700; // ~0.7s is safe for UM980
 
-    for (int port = 1; port <= 3; ++port) {
-        _serial.flush();
+    for (uint8_t port = 1; port <= 3; ++port) {
         delay(100);
-        GDBG_PRINTLN("GNSS: Testing port " + String(port) + " with command: " + testCommands[port - 1]);
+        //GDBG_PRINTLN("GNSS: Testing port " + String(port) + " command: " + cmds[port - 1]);
 
-        sendCommand(testCommands[port - 1]);
+        // Clear stale RX bytes
+        while (_serial.available()) _serial.read();
 
-        const unsigned long startTime = millis();
-        String response;
+        // Send probe (your sendCommand() adds \r\n)
+        sendCommand(cmds[port - 1]);
 
-        while (millis() - startTime < COMMANDDELAY) {
-            while (_serial.available()) {
-                response += (char)_serial.read();
-            }
+        // Collect response for a bounded window
+        String resp;
+        const unsigned long t0 = millis();
+        while (millis() - t0 < windowMs) {
+            while (_serial.available()) resp += char(_serial.read());
+            // optional: yield(); // if you want
         }
 
-        // FIX: indexOf() returns -1 if not found
-        if (response.indexOf("$command,unlog,response: OK") >= 0) {
-            return port;
+        // Case-insensitive search for the VERSIONA log
+        String up = resp; up.toUpperCase();
+        if (up.indexOf("#VERSIONA") >= 0) {
+            return port; // found!
         }
     }
-    return 0; // None found
+    return 0; // none found
 }
+
 
 
 //--------------------------------------
