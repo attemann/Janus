@@ -8,6 +8,22 @@
 #include "RadioTask.h"
 #include "RadioModule.h"
 
+#ifndef ARDUINO_ARCH_ESP32
+#error ESP32 only
+#endif
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+#if (configNUM_CORES > 1)
+#define CORE_APP   1
+#define CORE_COMM  0
+#define CORE_ANY   tskNO_AFFINITY
+#else
+#define CORE_APP   0
+#define CORE_COMM  0
+#define CORE_ANY   tskNO_AFFINITY
+#endif
+
 
 struct RadioInitParams {
     int8_t pinMISO;
@@ -67,7 +83,7 @@ bool radioStartTask(int8_t cs, int8_t irq, int8_t miso, int8_t mosi, int8_t sck,
     }
 
     BaseType_t ok = xTaskCreatePinnedToCore(
-        radioTask, "RadioTask", 4096, &radioParams, 2, &radioTaskHandle, 1
+        radioTask, "RadioTask", 4096, &radioParams, 2, &radioTaskHandle, CORE_COMM
     );
 
     if (ok != pdPASS) {

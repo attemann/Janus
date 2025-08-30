@@ -111,8 +111,6 @@ uint8_t RadioModule::getTargetId() const { return _radio.TARGETID; }
 uint8_t RadioModule::getLastRSSI() const { return _radio.RSSI; }
 
 
-
-
 bool RadioModule::receive(uint8_t* data, size_t& len) {
     if (!_radio.receiveDone()) return false;
 

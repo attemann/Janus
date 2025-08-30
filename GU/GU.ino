@@ -48,7 +48,6 @@ void haltUnit(String msg1, String msg2) {
 void setup() {
     Serial.begin(115200);
     while (!Serial);
-    delay(3000);
 
     Serial.printf("%s starting\r\n", APPNAME);
 
@@ -60,24 +59,24 @@ void setup() {
         while (true);  // halt
     }
 
-    radioSendMsg(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, static_cast <uint8_t>(DeviceState::DEVICE_STARTING));
-    delay(1000);
-    // GNSS 
-    gnss.begin(GNSS_BAUD, UART_RX, UART_TX);
+    Serial.println("Radio started");
+
     Serial.println(APPNAME "GNSS starting...");
 
-    if (gnss.detectUARTPort() == 0) {
-        radioSendMsg(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_INFORMATION, static_cast <uint8_t>(DeviceState::DEVICE_STARTING));
+    gnss.begin(GNSS_BAUD, UART_RX, UART_TX);
+
+    if (gnss.detectGPS() == 0) {
+        radioSendMsg(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_ERROR, static_cast <uint8_t>(ERR_GPS));
         Serial.println("GNSS init failed");
         while (1);
     }
     else Serial.println("GNSS port ok");
 
-    gnss.sendCommand("unlog\r\n");
-    gnss.sendCommand("mode rover\r\n");
-    gnss.sendCommand("config rtk timeout 60\r\n");
-    gnss.sendCommand("gpgga com2 1\r\n");
-    gnss.sendCommand("saveconfig\r\n");    
+    gnss.sendCommand("unlog", COMMANDDELAY);
+    gnss.sendCommand("mode rover", COMMANDDELAY);
+    gnss.sendCommand("config rtk timeout 60", COMMANDDELAY);
+    gnss.sendCommand("gpgga 1", COMMANDDELAY);
+    gnss.sendCommand("saveconfig", COMMANDDELAY);
     
     radioSendMsg(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_DEVICESTATE, DEVICE_STARTING);
 
@@ -90,43 +89,22 @@ void loop() {
     
     RxPacket pkt;
 
-    if (gnss.gpsDataAvailable()) {
-		//gpsBuf = gnss.readGPS();    
-        const uint8_t* buf = gnss.getBuffer();
-        size_t len = sizeof(buf);
-		switch (buf[0]) {
-            case 0: // No data received
-				Serial.println("GU:No data received from GNSS");    
-                break;
-            case '$': // NMEA message
-                Serial.println("GU:Received NMEA message:");
-                    if (gnss.parseGGA(buf, len, fix)) {
-                        if (showFix) gnss.showFix(fix);
-                    }
-                    else if (buf[0] == '$' && strstr((char*)buf, "GGA")) {
-                        // It is a GGA, but empty (no fenix). Optionally print a shorter note.
-                        Serial.println("GU:Empty GGA (no fix)");
-                    }
-                break;
-            case '!': // UBX message
-				Serial.println("GU:Received UBX message:");
-                SerialGNSS.write(buf, len);
-                SerialGNSS.flush();
-                break;
-            case '#': // Command response
-				Serial.println("GU:Received command response:");
-                break;
-            case 0xB5: // UBX message
-				Serial.println("GU:Received UBX message:");
-                SerialGNSS.write(buf, len);
-                SerialGNSS.flush();
-                break;
-            default:
-                Serial.printf("GU:Unknown GPS message: %02X\n", buf[0]);
-                break;
-           }
+    GNSSModule::GNSSMessage gnssData = gnss.readGPS();
+    if (gnssData.type == GNSSModule::GNSSMessageType::NMEA) {
+
+        GNSSModule::GNSSFix fix;
+
+        if (gnssData.length > 6 && memcmp(gnssData.data, "$GNGGA", 6) == 0) {
+            if (gnss.parseGGA(gnssData.data, gnssData.length, fix)) {
+                //sendToDisplay("GGA OK", "SIV=" + String(fix.SIV));
+            }
+            else Serial.println( APPNAME ": GGA parse fail");
+        }
+        else Serial.println(APPNAME ": Awaiting GGA");
+
+        Serial.printf("Time: %02d:%02d:%02d Siv: %02d HDOP: %d FIX: %d\r\n", fix.hour, fix.minute, fix.second, fix.SIV, fix.HDOP, static_cast<uint8_t>(fix.type));
     }
-        
+         
    if (radioReceive(pkt, 0)) {
        if (pkt.len > 0) {
            switch (pkt.data[0]) {

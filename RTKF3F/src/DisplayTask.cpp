@@ -3,6 +3,23 @@
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
 #include "DisplayTask.h"
+#include "_macros.h"
+
+#ifndef ARDUINO_ARCH_ESP32
+#error ESP32 only
+#endif
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+#if (configNUM_CORES > 1)
+#define CORE_APP   1
+#define CORE_COMM  0
+#define CORE_ANY   tskNO_AFFINITY
+#else
+#define CORE_APP   0
+#define CORE_COMM  0
+#define CORE_ANY   tskNO_AFFINITY
+#endif
 
 // LCD I2C
 
@@ -37,6 +54,9 @@ static void setLine(uint8_t line, const String& text) {
         lcd.setCursor(0, line);
         lcd.print(padded);
         prevLine[line] = padded;
+
+		DDBG_PRINTF(" LCD%d [%s]", line, padded.c_str());
+        if (line == 1) DDBG_PRINTLN();
     }
 }
 
@@ -64,7 +84,7 @@ void startDisplayTask() {
         nullptr,
         1,
         &displayTaskHandle,
-        1  // Core 1 (UI core)
+        CORE_COMM  // Core 1 (UI core)
     );
 }
 
@@ -77,7 +97,7 @@ void sendToDisplay(const String& l1, const String& l2) {
     strncpy(msg.line2, l2.c_str(), 16);
     msg.line1[16] = '\0';
     msg.line2[16] = '\0';
-
+            
     xQueueSend(displayQueue, &msg, 0);
 }
 

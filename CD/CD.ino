@@ -100,7 +100,8 @@ void loop() {
             case MSG_ERROR:
                 switch (pkt.data[1]) {
                     case ERR_RADIOINIT: sound.send({ SoundCmdType::ERROR, ERR_RADIOINIT }, 0); break;
-                    case ERR_UART:      sound.send({ SoundCmdType::ERROR, ERR_UART }, 0);      break;
+					case ERR_UART:      sound.send({ SoundCmdType::ERROR, ERR_UART }, 0); break;
+                    case ERR_GPS:       sound.send({ SoundCmdType::ERROR, ERR_GPS }, 0);      break;
                     default:            sound.send({ SoundCmdType::ERROR, pkt.data[1] }, 0);   break;
                 }
             break;

@@ -11,6 +11,19 @@
 //--------------------------------------
 namespace {
 
+    uint32_t calculateCRC24Q(const uint8_t* data, size_t len) {
+        uint32_t crc = 0;
+        for (size_t i = 0; i < len; ++i) {
+            crc ^= ((uint32_t)data[i]) << 16;
+            for (int j = 0; j < 8; ++j) {
+                crc <<= 1;
+                if (crc & 0x1000000) crc ^= 0x1864CFB;
+            }
+            crc &= 0xFFFFFF;
+        }
+        return crc;
+    }
+
     // Wait until at least n bytes are available, with timeout.
     bool waitAvail(Stream& s, size_t n, uint32_t timeoutMs) {
         const uint32_t t0 = millis();
@@ -116,12 +129,15 @@ namespace {
 
 } // namespace
 
+bool _asciiEnabled = true;   // set til false rett etter at du enable’r RTCMxxxx COM2 ...
+
+static inline uint32_t nowMs() { return (uint32_t)millis(); }
 
 //--------------------------------------
 // GNSSModule: lifecycle & basic I/O
 //--------------------------------------
 GNSSModule::GNSSModule(HardwareSerial& serial)
-    : _serial(serial), rtcmHandler(this) {
+    : _serial(serial) {
 }
 
 void GNSSModule::begin(uint32_t baud, int RX, int TX) {
@@ -129,57 +145,44 @@ void GNSSModule::begin(uint32_t baud, int RX, int TX) {
     _serial.setRxBufferSize(4096);
 }
 
-bool GNSSModule::gpsDataAvailable() {
-    return _serial.available() > 0;
-}
-
-void GNSSModule::sendCommand(const String& command) {
+void GNSSModule::sendCommand(const String& command, int eatResponseTime) {
     GDBG_PRINT("GPS: Command ["); GDBG_PRINT(command); GDBG_PRINT("]\r\n");
     const unsigned long start = millis();
-    _serial.print(command);
-    _serial.print("\r\n");
-    // while ((millis() - start) < COMMANDDELAY) {
-    //     if (_serial.available()) GDBG_WRITE(_serial.read());
-    // }
-}
-
-void GNSSModule::sendReset() {
-    const String command = "freset";
-    GDBG_PRINT("GPS: Command ["); GDBG_PRINT(command); GDBG_PRINT("] ");
-    const unsigned long start = millis();
-    _serial.print(command);
-    _serial.print("\r\n");
-    while ((millis() - start) < RESETDELAY) {
-        if (_serial.available()) GDBG_WRITE(_serial.read());
+    _serial.print(command + "\r\n");
+    if (eatResponseTime > 0) {
+        while ((millis() - start) < eatResponseTime) {
+            if (_serial.available()) _serial.read();
+            delay(1);
+        }
     }
 }
 
 // Probe UM980 logical COMx by sending "unlog comN" and looking for OK
-uint8_t GNSSModule::detectUARTPort() {
-    static const char* cmds[] = { "versiona com1", "versiona com2", "versiona com3" };
+uint8_t GNSSModule::detectGPS() {
+    static const char* cmds[] = { "versiona com1\r\n", "versiona com2\r\n", "versiona com3\r\n" };
     const unsigned long windowMs = 700; // ~0.7s is safe for UM980
 
     for (uint8_t port = 1; port <= 3; ++port) {
-        delay(100);
-        //GDBG_PRINTLN("GNSS: Testing port " + String(port) + " command: " + cmds[port - 1]);
+        GDBG_PRINTLN("GNSS: Testing port " + String(port) + " command: " + cmds[port - 1]);
 
         // Clear stale RX bytes
         while (_serial.available()) _serial.read();
 
         // Send probe (your sendCommand() adds \r\n)
-        sendCommand(cmds[port - 1]);
+        _serial.print(cmds[port - 1]);
 
         // Collect response for a bounded window
         String resp;
         const unsigned long t0 = millis();
         while (millis() - t0 < windowMs) {
-            while (_serial.available()) resp += char(_serial.read());
-            // optional: yield(); // if you want
+            while (_serial.available()) {
+                int c = _serial.read();
+                if (c >= 0) resp += (char)c;   
+            }
         }
 
         // Case-insensitive search for the VERSIONA log
-        String up = resp; up.toUpperCase();
-        if (up.indexOf("#VERSIONA") >= 0) {
+        if (resp.indexOf("#VERSIONA") >= 0) {
             return port; // found!
         }
     }
@@ -187,126 +190,157 @@ uint8_t GNSSModule::detectUARTPort() {
 }
 
 
+// Non-blocking, kort linje-lesing (3-5ms maks)
+bool readLineQuick(Stream& s, uint8_t* buf, size_t& len, size_t cap, uint32_t max_ms = 5) {
+    len = 0;
+    uint32_t t0 = nowMs();
+    while ((nowMs() - t0) < max_ms) {
+        while (s.available()) {
+            int c = s.read();
+            if (c < 0) break;
+            if (len + 1 < cap) buf[len++] = (uint8_t)c; // behold CR/LF om ønsket
+            if (c == '\n') { return true; }             // ferdig på LF
+        }
+        // kort pust – ikke delay(), bare gi CPU en sjanse
+    }
+    return (len > 0 && buf[len - 1] == '\n');
+}
 
-//--------------------------------------
-// GNSSModule: unified reader & parsing
-//--------------------------------------
+// Robust RTCM-lesing med sliding resync
+bool readOneRTCM_robust(Stream& stream, uint8_t* buf, size_t& len, size_t maxLen, uint32_t timeoutMs) {
+    const uint32_t t0 = millis();
+    while ((millis() - t0) < timeoutMs) {
+        // 1. Finn startbyte
+        if (!stream.available()) continue;
+        if (stream.peek() != 0xD3) {
+            stream.read(); // dropp støy
+            continue;
+        }
+
+        // 2. Startbyte OK – les header (3 byte)
+        if (stream.available() < 3) continue;
+        buf[0] = stream.read();  // 0xD3
+        buf[1] = stream.read();  // lenH
+        buf[2] = stream.read();  // lenL
+
+        const uint16_t payloadLen = ((buf[1] & 0x03) << 8) | buf[2];
+        const size_t totalLen = 3 + payloadLen + 3;
+
+        // 3. Buffer check
+        if (totalLen > maxLen) {
+            Serial.printf("RTCM: Packet too big (%u bytes)\n", totalLen);
+            // sliding resync: les én byte og prøv igjen
+            for (int i = 0; i < 2; ++i) if (stream.available()) stream.read();
+            continue;
+        }
+
+        // 4. Vent på resten av pakken
+        uint32_t t1 = millis();
+        while ((millis() - t1) < 20) { // 20ms max wait
+            if (stream.available() >= (payloadLen + 3)) break;
+        }
+        if (stream.available() < (payloadLen + 3)) {
+            Serial.println("RTCM: Timeout reading payload");
+            continue;
+        }
+
+        // 5. Les resten (payload + CRC)
+        stream.readBytes(buf + 3, payloadLen + 3);
+        len = totalLen;
+
+        // 6. Valider CRC
+        if (GNSSModule::isValidRTCM(buf, len)) {
+            return true;
+        }
+        else {
+            Serial.println("RTCM: CRC error – resyncing");
+            // Ikke les noe her – neste while-iterasjon vil fange neste 0xD3
+        }
+    }
+
+    // Timeout
+    return false;
+}
+
+
 GNSSModule::GNSSMessage GNSSModule::readGPS() {
     GNSSMessage result;
+    int first = _serial.peek();
 
-    const int first = _serial.peek();
-    if (first < 0) return result;
-
-    // 1) Command response lines beginning with '#' or "$command,..."
-    if (first == '#') {
-        size_t len = 0;
-        if (readLineWithTimeout(_serial, _gpsBuf, len, sizeof(_gpsBuf), 50)) {
-            result.type = GNSSMessageType::COMMAND_RESPONSE;
-            result.data = _gpsBuf;
-            result.length = len;
-            return result;
-        }
+    if (first < 0) {
+        result.type = GNSSMessageType::NODATA;
         return result;
     }
 
-    if (first == '$') {
-        size_t len = 0;
-        if (readLineWithTimeout(_serial, _gpsBuf, len, sizeof(_gpsBuf), 50)) {
-            constexpr size_t tagLen = sizeof("$command,") - 1;
-            if (len >= tagLen && memcmp(_gpsBuf, "$command,", tagLen) == 0) {
-                result.type = GNSSMessageType::COMMAND_RESPONSE;
-            }
-            else {
-                result.type = GNSSMessageType::NMEA;
-            }
-            result.data = _gpsBuf;
-            result.length = len;
-            return result;
-        }
-        return result;
-    }
-
-    // 2) RTCM (binary)
+    // 1. BINÆR: RTCM – gi alltid høyeste prioritet
     if (first == 0xD3) {
         size_t len = 0;
-        if (readOneRTCM(_serial, _gpsBuf, len, sizeof(_gpsBuf), 200)) {
+        if (readOneRTCM_robust(_serial, _gpsBuf, len, sizeof(_gpsBuf), 15)) {
             result.type = GNSSMessageType::RTCM;
             result.data = _gpsBuf;
             result.length = len;
+
+            for (int i = 0; i < len; i++) { Serial.printf("%02X ", _gpsBuf[i]); }
             return result;
         }
-        if (_serial.available()) _serial.read(); // resync by dropping 1 byte
-        return result;
+        else {
+            result.type = GNSSMessageType::NODATA;
+            return result; // sliding resync internt
+        }
     }
 
 #ifdef USE_UBX
-    // 3) Optional: UBX
+    // 2. BINÆR: UBX – hvis aktivert
     if (first == 0xB5) {
-        if (readUBX(_serial, _gpsBuf, result, 50)) return result;
-        if (_serial.available()) _serial.read();
-        return result;
+        if (readUBX(_serial, _gpsBuf, result, 5)) {
+            return result;
+        }
+        else {
+            _serial.read(); // dropp 1 byte ved UBX-feil
+            result.type = GNSSMessageType::NODATA;
+            return result;
+        }
     }
 #endif
 
-    // Unknown leading byte → consume 1 and continue next call
-    if (_serial.available()) _serial.read();
-    return result;
-}
-
-bool GNSSModule::readNMEA(uint8_t* buffer, size_t& len) {
-    static uint8_t nmeaBuf[128];
-    static size_t  nmeaPos = 0;
-    static bool    inSentence = false;
-
-    while (_serial.available()) {
-        char c = _serial.read();
-
-        if (!inSentence) {
-            if (c == '$') {
-                inSentence = true;
-                nmeaPos = 0;
-                nmeaBuf[nmeaPos++] = c;
-            }
-        }
-        else {
-            if (nmeaPos < sizeof(nmeaBuf) - 1) {
-                nmeaBuf[nmeaPos++] = c;
+    // 3. ASCII: kun hvis aktivert
+    if (_asciiEnabled && (first == '#' || first == '$')) {
+        size_t len = 0;
+        if (readLineQuick(_serial, _gpsBuf, len, sizeof(_gpsBuf), 5)) {
+            if (first == '#') {
+                result.type = GNSSMessageType::COMMAND_RESPONSE;
             }
             else {
-                inSentence = false;
-                nmeaPos = 0;
-                continue;
+                constexpr size_t tagLen = sizeof("$command,") - 1;
+                if (len >= tagLen && memcmp(_gpsBuf, "$command,", tagLen) == 0) {
+                    result.type = GNSSMessageType::COMMAND_RESPONSE;
+                }
+                else {
+                    result.type = GNSSMessageType::NMEA;
+                }
             }
-            if (c == '\n') {
-                nmeaBuf[nmeaPos] = '\0';
-                memcpy(buffer, nmeaBuf, nmeaPos + 1);
-                len = nmeaPos;
-                inSentence = false;
-                return true;
-            }
+            result.data = _gpsBuf;
+            result.length = len;
+            return result;
+        }
+        else {
+            // linja ikke ferdig – vent
+            result.type = GNSSMessageType::NODATA;
+            return result;
         }
     }
-    return false;
-}
 
-bool GNSSModule::readCommandResponse(uint8_t* buffer, size_t& len) {
-    size_t idx = 0;
-    while (_serial.available()) {
-        char c = _serial.read();
-        if (idx < 127) buffer[idx++] = c;
-        if (c == '\n' || idx >= 127) {
-            buffer[idx] = '\0';
-            len = idx;
-            if (idx >= 2 && buffer[idx - 2] == '\r') {
-                buffer[idx - 2] = '\n';
-                buffer[idx - 1] = '\0';
-                --len;
-            }
-            return true;
-        }
+    // 4. ASCII-støy etter RTCM aktivert – dropp én kjent ascii-byte
+    if (!_asciiEnabled && (first == '#' || first == '$')) {
+        _serial.read(); // slipp neste kall til
+        result.type = GNSSMessageType::NODATA;
+        return result;
     }
-    len = idx;
-    return false;
+
+    // 5. Ukjent byte – dropp én byte og prøv igjen senere
+    _serial.read();
+    result.type = GNSSMessageType::NODATA;
+    return result;
 }
 
 
@@ -416,46 +450,6 @@ bool GNSSModule::parseGGA(const uint8_t* buf, size_t len, GNSSFix& fix) {
     return true;
 }
 
-void GNSSModule::showFix(const GNSSFix& fix) {
-    Serial.printf(
-        "Time %02d:%02d:%06.3f | "
-        "Lat %.6f, Lon %.6f, Alt %.2f m | "
-        "SIV %d | HDOP %.2f | Fix %s\n",
-        fix.hour, fix.minute, fix.second,
-        fix.lat, fix.lon, fix.alt,
-        fix.SIV,
-        fix.HDOP / 100.0f,   // stored as HDOP*100
-        fixTypeToString(fix.type).c_str()
-    );
-}
-
-String GNSSModule::fixTypeToString(FIXTYPE type) {
-    switch (type) {
-    case FIXTYPE::NOFIX: return "No fix"; break;
-    case FIXTYPE::GPS: return "GPS fix"; break;
-    case FIXTYPE::DGPS: return "DGPS fix"; break;
-    case FIXTYPE::PPS: return "PPS fix"; break;
-    case FIXTYPE::RTK_FLOAT: return "RTK Float"; break;
-    case FIXTYPE::RTK_FIX: return "RTK Fixed"; break;
-    case FIXTYPE::DEAD_RECK: return "Dead Reckoning"; break;
-    case FIXTYPE::MANUAL: return "Manual Input Mode"; break;
-    case FIXTYPE::SIM: return "Simulation Mode"; break;
-    default: return "Other Fix Type"; break;
-    }
-}
-
-void GNSSModule::printAscii() {
-    for (size_t i = 0; i < _gpsBufLen; ++i) {
-        char c = _gpsBuf[i];
-        if (c >= 32 && c <= 126) GDBG_PRINT(c);
-        else if (c == '\r')      GDBG_PRINT("\\r");
-        else if (c == '\n')      GDBG_PRINT("\\n");
-        else                     GDBG_PRINT('.');
-    }
-    GDBG_PRINTLN();
-}
-
-
 //--------------------------------------
 // GNSSModule: RTCM utilities
 //--------------------------------------
@@ -487,184 +481,3 @@ bool GNSSModule::isValidRTCM(const uint8_t* data, size_t len) {
     return true;
 }
 
-uint32_t GNSSModule::calculateCRC24Q(const uint8_t* data, size_t len) {
-    uint32_t crc = 0;
-    for (size_t i = 0; i < len; ++i) {
-        crc ^= ((uint32_t)data[i]) << 16;
-        for (int j = 0; j < 8; ++j) {
-            crc <<= 1;
-            if (crc & 0x1000000) crc ^= 0x1864CFB;
-        }
-        crc &= 0xFFFFFF;
-    }
-    return crc;
-}
-
-const char* GNSSModule::getRTCMName(uint16_t type) {
-    switch (type) {
-    case 1001: return "RTCM 1001: GPS L1 Obs";
-    case 1002: return "RTCM 1002: GPS L1 Obs (Ext)";
-    case 1003: return "RTCM 1003: GPS L1/L2 Obs";
-    case 1004: return "RTCM 1004: GPS L1/L2 Obs (Ext)";
-    case 1005: return "RTCM 1005: Stationary RTK (No height)";
-    case 1006: return "RTCM 1006: Stationary RTK (with height)";
-    case 1007: return "RTCM 1007: Antenna Descriptor";
-    case 1008: return "RTCM 1008: Antenna Descriptor + Serial Number";
-    case 1033: return "RTCM 1033: Antenna Descriptor & Firmware Version";
-    case 1071: return "RTCM 1071: GPS MSM1";
-    case 1072: return "RTCM 1072: GPS MSM2";
-    case 1073: return "RTCM 1073: GPS MSM3";
-    case 1074: return "RTCM 1074: GPS MSM4";
-    case 1075: return "RTCM 1075: GPS MSM5";
-    case 1076: return "RTCM 1076: GPS MSM6";
-    case 1077: return "RTCM 1077: GPS MSM7";
-    case 1081: return "RTCM 1081: GLONASS MSM1";
-    case 1082: return "RTCM 1082: GLONASS MSM2";
-    case 1083: return "RTCM 1083: GLONASS MSM3";
-    case 1084: return "RTCM 1084: GLONASS MSM4";
-    case 1085: return "RTCM 1085: GLONASS MSM5";
-    case 1086: return "RTCM 1086: GLONASS MSM6";
-    case 1087: return "RTCM 1087: GLONASS MSM7";
-    case 1091: return "RTCM 1091: Galileo MSM1";
-    case 1092: return "RTCM 1092: Galileo MSM2";
-    case 1093: return "RTCM 1093: Galileo MSM3";
-    case 1094: return "RTCM 1094: Galileo MSM4";
-    case 1095: return "RTCM 1095: Galileo MSM5";
-    case 1096: return "RTCM 1096: Galileo MSM6";
-    case 1097: return "RTCM 1097: Galileo MSM7";
-    case 1121: return "RTCM 1121: BeiDou MSM1";
-    case 1122: return "RTCM 1122: BeiDou MSM2";
-    case 1123: return "RTCM 1123: BeiDou MSM3";
-    case 1124: return "RTCM 1124: BeiDou MSM4";
-    case 1125: return "RTCM 1125: BeiDou MSM5";
-    case 1126: return "RTCM 1126: BeiDou MSM6";
-    case 1127: return "RTCM 1127: BeiDou MSM7";
-    case 1230: return "RTCM 1230: GLONASS Code-Phase Biases";
-    case 4072: return "RTCM 4072: Proprietary (e.g. u-blox)";
-    case 4073: return "RTCM 4073: u-blox Subtype A";
-    case 4074: return "RTCM 4074: u-blox Subtype B";
-    default:   return "RTCM: Unknown or Unsupported Type";
-    }
-}
-
-uint16_t GNSSModule::getRTCMBits(const uint8_t* buffer, int startBit, int bitLen) {
-    uint32_t result = 0;
-    for (int i = 0; i < bitLen; ++i) {
-        const int byteIndex = (startBit + i) / 8;
-        const int bitIndex = 7 - ((startBit + i) % 8);
-        result <<= 1;
-        result |= (buffer[byteIndex] >> bitIndex) & 0x01;
-    }
-    return (uint16_t)result;
-}
-
-
-//--------------------------------------
-// RTCMHandler: list, config, stats
-//--------------------------------------
-GNSSModule::RTCMHandler::RTCMHandler(GNSSModule* gnss) : parent(gnss) {
-    add("rtcm1033", 1033, 10.0f, true, "Antenna + Firmware");
-    add("rtcm1006", 1006, 10.0f, true, "Stat. Ref (with height)");
-    add("rtcm1074", 1074, 1.0f, true, "GPS MSM4");
-    add("rtcm1124", 1124, 1.0f, true, "BeiDou MSM4");
-    add("rtcm1084", 1084, 1.0f, true, "GLONASS MSM4");
-    add("rtcm1094", 1094, 1.0f, true, "Galileo MSM4");
-}
-
-void GNSSModule::RTCMHandler::add(const char* name, uint16_t id, float freq, bool enabled, const char* desc) {
-    if (count < MAX_MSGS) {
-        messages[count++] = { name, id, freq, enabled, desc, 0 };
-    }
-}
-
-void GNSSModule::RTCMHandler::enable(int index, bool value) {
-    if (index < 0 || index >= count) return;
-    if (messages[index].enabled == value) return;
-    messages[index].enabled = value;
-    sendConfig(index);
-}
-
-void GNSSModule::RTCMHandler::enableById(uint16_t id, bool value) {
-    if (int idx = findById(id); idx >= 0) enable(idx, value);
-}
-
-void GNSSModule::RTCMHandler::setFrequency(int index, float freq) {
-    if (index < 0 || index >= count) return;
-    messages[index].frequency = freq;
-    if (messages[index].enabled) sendConfig(index);
-}
-
-void GNSSModule::RTCMHandler::setFrequencyById(uint16_t id, float freq) {
-    if (int idx = findById(id); idx >= 0) setFrequency(idx, freq);
-}
-
-void GNSSModule::RTCMHandler::sendConfig(int index) {
-    if (!parent) return;
-    if (index < 0 || index >= (int)(sizeof(messages) / sizeof(messages[0]))) return;
-    auto& msg = messages[index];
-    if (!msg.name) return;
-
-    String cmd = msg.enabled
-        ? (String(msg.name) + " com2 " + String(msg.frequency, 1))
-        : (String("unlog ") + msg.name + " com2");
-
-    GDBG_PRINTF("sendConfig: Sending %s", cmd.c_str());
-    parent->sendCommand(cmd);
-    delay(100);
-}
-
-void GNSSModule::RTCMHandler::sendAllConfig() {
-    for (size_t i = 0; i < count; ++i) sendConfig((int)i);
-}
-
-void GNSSModule::RTCMHandler::printList(bool showOnlyEnabled) {
-    GDBG_PRINTLN(" #  Name        |  Freq   | State    | Sent   | Description");
-    GDBG_PRINTLN("-------------------------------------------------------------------");
-    for (size_t i = 0; i < count; ++i) {
-        if (showOnlyEnabled && !messages[i].enabled) continue;
-        const char* color = messages[i].enabled ? ANSI_GREEN : ANSI_RED;
-        GDBG_PRINTF("%s%2d: %-10s | %5.2f Hz | %-8s | %6lu | %s%s\n",
-            color,
-            (int)(i + 1),
-            messages[i].name,
-            messages[i].frequency,
-            messages[i].enabled ? "ENABLED" : "DISABLED",
-            messages[i].txCount,
-            messages[i].description,
-            ANSI_RESET
-        );
-    }
-}
-
-int GNSSModule::RTCMHandler::findById(uint16_t id) const {
-    for (size_t i = 0; i < count; ++i) if (messages[i].id == id) return (int)i;
-    return -1;
-}
-
-int GNSSModule::RTCMHandler::findByName(const char* name) const {
-    for (size_t i = 0; i < count; ++i) if (strcmp(messages[i].name, name) == 0) return (int)i;
-    return -1;
-}
-
-void GNSSModule::RTCMHandler::getNextRTCMCount(uint16_t* rtcmId, uint32_t* txCount) {
-    if (count == 0) { if (rtcmId) *rtcmId = 0; if (txCount) *txCount = 0; return; }
-
-    size_t startIdx = _lastStatusIdx;
-    size_t i = startIdx;
-    do {
-        i = (i + 1) % count;
-        if (messages[i].enabled) {
-            if (rtcmId)  *rtcmId = messages[i].id;
-            if (txCount) *txCount = messages[i].txCount;
-            _lastStatusIdx = i;
-            return;
-        }
-    } while (i != startIdx);
-
-    if (rtcmId)  *rtcmId = 0;
-    if (txCount) *txCount = 0;
-}
-
-void GNSSModule::RTCMHandler::incrementSentCount(uint16_t type) {
-    if (int idx = findById(type); idx >= 0) messages[idx].txCount++;
-}

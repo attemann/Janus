@@ -2,9 +2,22 @@
 
 #define WIFI
 
-#define RADIO_DEBUG
+#define DISPLAY_DEBUG
+//#define RADIO_DEBUG
 #define GNSS_DEBUG
 //#define WIFI_DEBUG
+
+#ifdef DISPLAY_DEBUG
+#define DDBG_BEGIN(baud) Serial.begin(baud)
+#define DDBG_PRINT(x)    Serial.print(x)
+#define DDBG_PRINTLN(x)  Serial.println(x)
+#define DDBG_PRINTF(...) Serial.printf(__VA_ARGS__)
+#else
+#define DDBG_BEGIN(baud)    ((void)0)
+#define DDBG_PRINT(x)       ((void)0)
+#define DDBG_PRINTLN(x)     ((void)0)
+#define DDBG_PRINTF(...)    ((void)0)
+#endif
 
 #ifdef RADIO_DEBUG
 #define RDBG_BEGIN(baud) Serial.begin(baud)

@@ -88,13 +88,14 @@ inline const char* fixTypeName(FixType t) {
         : "Unknown";
 }
 
-inline String fixTypeToString(FixType t) { return String(fixTypeName(t)); }
+// inline String fixTypeToString(FixType t) { return String(fixTypeName(t)); }
 
 // Error Codes
 enum  ErrorCode : uint8_t {
     ERR_RADIOINIT = 0x00,
     ERR_UART = 0x01,
-    ERR_UNKNOWN = 0x02
+    ERR_GPS = 0x02,
+    ERR_UNKNOWN = 0x03
 };
 
 #endif

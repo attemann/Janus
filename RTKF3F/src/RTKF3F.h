@@ -5,7 +5,8 @@
 #include "_macros.h"
 #include "Const.h"  
 #include "Structs.h"
-#include "GNSSModule.h"
+//#include "GNSSModule.h"
+#include <GNSS.h>
 #include "RadioModule.h"
 #include "ConfigMgr.h"
 #include "Arena.h"
