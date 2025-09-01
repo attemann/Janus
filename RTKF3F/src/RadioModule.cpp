@@ -81,6 +81,7 @@ bool RadioModule::init(int8_t pMISO, int8_t pMOSI, int8_t pSCK, uint16_t nodeId,
     }
 
     _radio.setHighPower(_isHighPower);
+    _radio.setPowerLevel(31);
     _radio.setFrequency(frequencyHz);
     _radio.encrypt(nullptr);
     _radio.setAddress(nodeId);
@@ -336,7 +337,7 @@ void RadioModule::RTCM_Reassembler::acceptFragment(const uint8_t* data, size_t l
     constexpr size_t HEADER_SIZE = 4;
     constexpr size_t MAX_FRAGMENTS = 255;
 
-    if (!data || len < HEADER_SIZE + 1 || data[0] != static_cast<uint8_t>(MessageType::MSG_RTCM_FRAGMENT)) return;
+    if (!data || len < HEADER_SIZE) return;
 
     const uint8_t index = data[1];
     const uint8_t total = data[2];

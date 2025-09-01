@@ -8,7 +8,7 @@
 enum class SoundCmdType {
     WAV, NUMBER, INT, TIME,
     ERROR, INFO, FIX,
-    STARTING, GET_FIX, SURVEY, OPERATING, GPS
+    STARTING, GETTINGFIX, SURVEY, OPERATING, GPS
 };
 
 struct SoundCommand {

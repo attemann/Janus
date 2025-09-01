@@ -72,7 +72,7 @@ void SoundTask::handle(const SoundCommand& cmd) {
     case SoundCmdType::INFO:      _speaker.speakInfo(cmd.intValue); break;
     case SoundCmdType::FIX:       _speaker.speakFix(cmd.intValue); break;
     case SoundCmdType::STARTING:  _speaker.speakStarting(); break;
-    case SoundCmdType::GET_FIX:   _speaker.speakGettingFix(); break;
+    case SoundCmdType::GETTINGFIX:   _speaker.speakGettingFix(); break;
     case SoundCmdType::SURVEY:    _speaker.speakSurvey(); break;
     case SoundCmdType::OPERATING: _speaker.speakOperating(); break;
     }

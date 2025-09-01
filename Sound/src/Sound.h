@@ -1,4 +1,5 @@
-﻿/*
+﻿// Sound.h
+/*
 
 Upload:
 ======
@@ -31,8 +32,6 @@ void loop() {
     delay(500);
 }
 */
-
-// Sound.h
 
 #pragma once
 

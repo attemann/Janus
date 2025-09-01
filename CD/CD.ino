@@ -73,15 +73,9 @@ void loop() {
     if (radioReceive(pkt, 0)) {          // non-blocking; use portMAX_DELAY to block
        
         switch (pkt.from) {
-		    case NODEID_RTKBASE:
-                sound.send({ SoundCmdType::WAV, 0, 0.0f, "/RTK_base.wav" }, 0);
-            break;
-		    case NODEID_GU:      
-                sound.send({ SoundCmdType::WAV, 0, 0.0f, "/glider_unit.wav" }, 0);
-            break;
-		    default:
-                sound.send({ SoundCmdType::WAV, 0, 0.0f, "/unknown.wav" }, 0);
-            break;
+		    case NODEID_RTKBASE: sound.send({ SoundCmdType::WAV, 0, 0.0f, "/RTK_base.wav" }, 0); break;
+		    case NODEID_GU:      sound.send({ SoundCmdType::WAV, 0, 0.0f, "/glider_unit.wav" }, 0); break;
+		    default:             sound.send({ SoundCmdType::WAV, 0, 0.0f, "/unknown.wav" }, 0); break;
         }
 
         Serial.printf("RX from %u, len=%u, RSSI=%d\r\n", pkt.from, pkt.len, pkt.rssi);
@@ -91,22 +85,22 @@ void loop() {
             case MSG_DEVICESTATE:
                 switch (pkt.data[1]) {
                     case DEVICE_STARTING:   sound.send({ SoundCmdType::STARTING },  0); break;
-                    case DEVICE_GETTINGFIX: sound.send({ SoundCmdType::GET_FIX },   0); break;
+                    case DEVICE_GETTINGFIX: sound.send({ SoundCmdType::GETTINGFIX },0); break;
                     case DEVICE_SURVEYING:  sound.send({ SoundCmdType::SURVEY },    0); break;
                     case DEVICE_OPERATING:  sound.send({ SoundCmdType::OPERATING }, 0); break;
-                default: sound.send({ SoundCmdType::ERROR, ERR_UNKNOWN, 0.0f },     0); break;
+                    default: sound.send({ SoundCmdType::ERROR, ERR_UNKNOWN, 0.0f },     0); break;
             }
             break;
             case MSG_ERROR:
                 switch (pkt.data[1]) {
                     case ERR_RADIOINIT: sound.send({ SoundCmdType::ERROR, ERR_RADIOINIT }, 0); break;
 					case ERR_UART:      sound.send({ SoundCmdType::ERROR, ERR_UART }, 0); break;
-                    case ERR_GPS:       sound.send({ SoundCmdType::ERROR, ERR_GPS }, 0);      break;
-                    default:            sound.send({ SoundCmdType::ERROR, pkt.data[1] }, 0);   break;
+                    case ERR_GPS:       sound.send({ SoundCmdType::ERROR, ERR_GPS }, 0); break;
+                    default:            sound.send({ SoundCmdType::ERROR, pkt.data[1] }, 0); break;
                 }
             break;
             case MSG_SIV:
-                sound.send({ SoundCmdType::WAV, 0, 0.0f, "/gps.wav" }, 0);
+                //sound.send({ SoundCmdType::WAV, 0, 0.0f, "/gps.wav" }, 0);
                 sound.send({ SoundCmdType::INT, pkt.data[1] }, 0);
                 sound.send({ SoundCmdType::WAV, 0, 0.0f, "/satellites.wav" }, 0);
             break;

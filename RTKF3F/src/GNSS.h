@@ -102,12 +102,12 @@ public:
         _ser.begin(_baud, SERIAL_8N1, _rx, _tx);
 
         if (!_parsedQ)  _parsedQ = xQueueCreate(16, sizeof(ParsedMsg));
-        if (!_cmdQ)     _cmdQ    = xQueueCreate(10, sizeof(CmdItem));
-        if (!_respQ)    _respQ   = xQueueCreate(20, sizeof(CmdReply));
+        if (!_cmdQ)     _cmdQ = xQueueCreate(10, sizeof(CmdItem));
+        if (!_respQ)    _respQ = xQueueCreate(20, sizeof(CmdReply));
         if (!_txMutex)  _txMutex = xSemaphoreCreateMutex();
         if (!_parsedQ || !_cmdQ || !_respQ || !_txMutex) return false;
 
-        BaseType_t ok1 = xTaskCreatePinnedToCore(readerThunk,  "gnssReader",  4096, this, 3, nullptr, ARDUINO_RUNNING_CORE);
+        BaseType_t ok1 = xTaskCreatePinnedToCore(readerThunk, "gnssReader", 4096, this, 3, nullptr, ARDUINO_RUNNING_CORE);
         BaseType_t ok2 = xTaskCreatePinnedToCore(commandThunk, "gnssCommand", 2048, this, 2, nullptr, ARDUINO_RUNNING_CORE);
         return (ok1 == pdPASS && ok2 == pdPASS);
     }
@@ -123,8 +123,13 @@ public:
     // Blocking: send & wait for reply containing expectSubstr (optional)
     bool sendWait(const char* cmd, const char* expectSubstr, uint32_t timeoutMs, String* outLine = nullptr) {
         if (!cmd || !*cmd || !_cmdQ || !_respQ) return false;
-        CmdItem it{}; strlcpy(it.text, cmd, sizeof(it.text));
-        it.timeoutMs = timeoutMs; if (expectSubstr) strlcpy(it.expect, expectSubstr, sizeof(it.expect));
+        CmdItem it{};
+        strlcpy(it.text, cmd, sizeof(it.text));
+        it.timeoutMs = timeoutMs;
+        if (expectSubstr) strlcpy(it.expect, expectSubstr, sizeof(it.expect));
+
+		GDBG_PRINTF("GNSS: CMD -> %s", cmd);
+
         if (xQueueSend(_cmdQ, &it, pdMS_TO_TICKS(100)) != pdTRUE) return false;
 
         uint32_t t0 = millis();
@@ -136,7 +141,11 @@ public:
             if (xQueueReceive(_respQ, &r, pdMS_TO_TICKS(remain)) == pdTRUE) {
                 if (!it.expect[0] || strstr(r.line, it.expect)) {
                     if (outLine) *outLine = r.line;
+                    GDBG_PRINTF("Command [%s], response [%s]\r\n", cmd, r.line);
                     return true;
+				}
+                else {
+                    GDBG_PRINTF("Command [%s], response [%s]", cmd, outLine->c_str());
                 }
             }
         }
@@ -200,23 +209,13 @@ public:
         return xQueueReceive(_parsedQ, &out, 0) == pdTRUE;
     }
 
-    // Convenience: configure base-style outputs on a given port ("com1|com2|com3")
-    void demoConfigureBase(const char* portName) {
-        String line;
-        sendWait("unlog", "#", 800, &line);                   // quiet current port
-        char cmd[64];
-        snprintf(cmd, sizeof(cmd), "gpgga %s 1", portName);   // 1 Hz GGA
-        sendWait(cmd, "GPGGA", 800, &line);
-
-        snprintf(cmd, sizeof(cmd), "rtcm1006 %s 10", portName); send(cmd);
-        snprintf(cmd, sizeof(cmd), "rtcm1033 %s 10", portName); send(cmd);
-        snprintf(cmd, sizeof(cmd), "rtcm1074 %s 1", portName); send(cmd);
-        snprintf(cmd, sizeof(cmd), "rtcm1084 %s 1", portName); send(cmd);
-        snprintf(cmd, sizeof(cmd), "rtcm1094 %s 1", portName); send(cmd);
-        snprintf(cmd, sizeof(cmd), "rtcm1124 %s 1", portName); send(cmd);
-        vTaskDelay(pdMS_TO_TICKS(120));
-        sendWait("saveconfig", "#", 1500, &line);
-        sendWait("config", "$CONFIG", 1200, &line);           // echo config lines
+    static bool isValidRTCM(const uint8_t* frame, size_t len) {
+        if (len < 6 || frame[0] != 0xD3) return false;
+        uint16_t l = ((frame[1] & 0x03) << 8) | frame[2];
+        size_t need = 3 + l + 3;
+        if (need != len) return false;
+        uint32_t exp = (uint32_t)frame[len - 3] << 16 | (uint32_t)frame[len - 2] << 8 | frame[len - 1];
+        return crc24q(frame, len - 3) == exp;
     }
 
 private:
@@ -227,8 +226,8 @@ private:
     // Queues & mutex
     struct CmdItem { char text[96]; uint32_t timeoutMs; char expect[48]; };
     QueueHandle_t     _parsedQ = nullptr;
-    QueueHandle_t     _cmdQ    = nullptr;
-    QueueHandle_t     _respQ   = nullptr;
+    QueueHandle_t     _cmdQ = nullptr;
+    QueueHandle_t     _respQ = nullptr;
     SemaphoreHandle_t _txMutex = nullptr;
 
     // Parser state
@@ -347,7 +346,7 @@ private:
     // Helpers
     void handleAscii(const char* line, size_t len) {
         // Command replies start with '#' or $CONFIG,...
-        if (len > 0 && (line[0] == '#' || (line[0] == '$' && strncmp(line, "$CONFIG", 7) == 0))) {
+        if (len > 0 && (line[0] == '#' || (line[0] == '$' && strncmp(line, "$command", 8) == 0))) {
             if (_respQ) { CmdReply r{}; size_t L = min(len, sizeof(r.line) - 1); memcpy(r.line, line, L); r.line[L] = '\0'; xQueueSend(_respQ, &r, 0); }
             if (_parsedQ) {
                 ParsedMsg m{}; m.type = MsgType::CMD_REPLY; size_t L = min(len, sizeof(m.u.reply.line) - 1);
@@ -377,13 +376,6 @@ private:
 
     // --- RTCM helpers (match your previous usage) ---
 
-    static bool isValidRTCM(const uint8_t* frame, size_t len) {
-        if (len < 6 || frame[0] != 0xD3) return false;
-        uint16_t l = ((frame[1] & 0x03) << 8) | frame[2];
-        size_t need = 3 + l + 3;
-        if (need != len) return false;
-        uint32_t exp = (uint32_t)frame[len - 3] << 16 | (uint32_t)frame[len - 2] << 8 | frame[len - 1];
-        return crc24q(frame, len - 3) == exp;
-    }
+
 
 };
