@@ -5,14 +5,11 @@
 #include "_macros.h"
 #include "Const.h"  
 #include "Structs.h"
-//#include "GNSSModule.h"
 #include <GNSS.h>
 #include "RadioModule.h"
 #include "ConfigMgr.h"
 #include "Arena.h"
 #include "Glider.h"
-
-const char* getMessageName(MessageType type);
 
 // UBX sync bytes and message details
 #define UBX_SYNC1            0xB5

@@ -3,7 +3,7 @@
 #define WIFI
 
 #define DISPLAY_DEBUG
-//#define RADIO_DEBUG
+#define RADIO_DEBUG
 #define GNSS_DEBUG
 //#define WIFI_DEBUG
 

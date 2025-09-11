@@ -3,11 +3,11 @@
 #include <SPI.h>
 #include <RFM69.h>
 #include <RTKF3F.h>
-#include <RadioTask.h>
 #include "GU.h"
 
 #define APPNAME "GU 1.0"
 #define THIS_NODE_ID NODEID_GU
+#define COMMANDDELAY 200  // ms to wait for GNSS command response
 
 // Radio
 inline constexpr int8_t RFM69_MISO = 20;
@@ -18,6 +18,7 @@ inline constexpr int8_t RFM69_IRQ  = 16;
 inline constexpr int8_t RFM69_IRQN = digitalPinToInterrupt(RFM69_IRQ);
 inline constexpr int8_t RFM69_RST  = -1;
 
+RadioModule radio;
 RadioModule::RTCM_Reassembler reassembler;
 
 bool showFix = true;
@@ -29,8 +30,8 @@ bool showGngga = false;
 #define UART_TX   4
 
 HardwareSerial SerialGNSS(2);
-GNSSModule gnss(SerialGNSS, UART_RX, UART_TX, GNSS_BAUD);
-GNSSModule::GNSSFix fix;
+GNSSModule gnss(SerialGNSS);
+GNSSFix fix;
 
 Arena  arena;
 Glider glider;
@@ -43,73 +44,17 @@ static inline void haltUnit(const String& msg1, const String& msg2) {
     while (true);
 }
 
-
-// ------------------------------
-// Centralized GNSS message handling
-// ------------------------------
-static inline void handleParsed(const GNSSModule::ParsedMsg& m) {
-    switch (m.type) {
-    case GNSSModule::MsgType::NMEA_LINE: {
-        if (m.u.nmea.len > 6 && !strncmp(m.u.nmea.data, "$GNGGA", 6)) {
-            // Ensure parseGGA is public in GNSSModule (as discussed)
-            bool ok = GNSSModule::parseGGA(m.u.nmea.data, fix);
-            if (ok) {
-                if (showFix) {
-                    Serial.printf("GGA OK: FIX=%u SIV=%d HDOP=%d lat=%.6f lon=%.6f alt=%.2f\n",
-                        (unsigned)fix.type, fix.SIV, fix.HDOP, fix.lat, fix.lon, fix.alt);
-                }
-            }
-            else if (showGngga) {
-                Serial.println("GGA parse fail");
-            }
-        }
-        else if (showGngga) {
-            Serial.print("NMEA: "); Serial.println(m.u.nmea.data);
-        }
-
-        // Optional periodic SIV “beep” message upstream
-        if (millis() - lastSpeakMs >= SPEAK_INTERVAL_MS) {
-            radioSendMsg(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_SIV, fix.SIV);
-            lastSpeakMs = millis();
-        }
-        break;
-    }
-
-    case GNSSModule::MsgType::RTCM_FRAME: {
-        // Normally GU just *ingests* RTCM from radio and forwards to GNSS,
-        // but if you ever hook GNSS->RTCM locally, you can inspect here:
-        uint16_t t = m.u.rtcm.type;
-        Serial.printf("GU (local) RTCM observed: type=%u len=%u\n", t, (unsigned)m.u.rtcm.bytes);
-        break;
-    }
-
-    case GNSSModule::MsgType::CMD_REPLY: {
-        // Optional debug echo of GNSS command replies
-        // Serial.printf("GNSS REPLY: %s\n", m.u.reply.line);
-        break;
-    }
-
-    default: break;
-    }
-}
-
-// Poll once from GNSS parsed queue
-static inline void pumpGnssOnce() {
-    GNSSModule::ParsedMsg m;
-    if (gnss.readParsed(m)) handleParsed(m);
-}
-
 void setup() {
     Serial.begin(115200);
     while (!Serial);
     delay(200);
     Serial.printf("%s starting\n", APPNAME);
-
-    // Start radio task
-    if (!radioStartTask(RFM69_MISO, RFM69_MOSI, RFM69_SCK, RFM69_CSS, RFM69_IRQ,
-        THIS_NODE_ID, NETWORK_ID, FREQUENCY_RTCM)) {
-        haltUnit(APPNAME, "Radio task start failed");
+    if (!radio.init(RFM69_MISO, RFM69_MOSI, RFM69_SCK, THIS_NODE_ID, NETWORK_ID, FREQUENCY_RTCM)) {
+        while (true) delay(100);
     }
+
+    radio.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_DEVICESTATE,
+        static_cast<uint8_t>(DEVICE_STARTING));
     Serial.println("Radio started");
 
     // GNSS

@@ -1,0 +1,210 @@
+//DisplayTask.cpp
+#include <Arduino.h>
+#include <LiquidCrystal_I2C.h>
+#include <Wire.h>
+#include "DisplayTask.h"
+#include "_macros.h"
+
+#ifndef ARDUINO_ARCH_ESP32
+#error ESP32 only
+#endif
+
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+#if (configNUM_CORES > 1)
+#define CORE_APP   1
+#define CORE_COMM  0
+#define CORE_ANY   tskNO_AFFINITY
+#else
+#define CORE_APP   0
+#define CORE_COMM  0
+#define CORE_ANY   tskNO_AFFINITY
+#endif
+
+// LCD I2C
+#define LCD_SDA 4
+#define LCD_SCL 5
+#define I2C_TIMEOUT_MS 100
+#define I2C_RETRY_COUNT 3
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+TaskHandle_t displayTaskHandle = nullptr;
+QueueHandle_t displayQueue = nullptr;
+
+static char prevLine[2][17] = { "                ", "                " };
+static bool lcdInitialized = false;
+
+// Initialize LCD with error handling
+static bool lcdBegin() {
+    for (int retry = 0; retry < I2C_RETRY_COUNT; retry++) {
+        Wire.begin(LCD_SDA, LCD_SCL);
+        Wire.setTimeout(I2C_TIMEOUT_MS);
+
+        // Test I2C communication
+        Wire.beginTransmission(0x27);
+        if (Wire.endTransmission() == 0) {
+            lcd.init();
+            lcd.backlight();
+            lcd.clear();
+            lcdInitialized = true;
+            DDBG_PRINTLN("LCD initialized successfully");
+            return true;
+        }
+
+        DDBG_PRINTF("LCD init retry %d\n", retry + 1);
+        Wire.end();
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+    DDBG_PRINTLN("LCD initialization failed!");
+    lcdInitialized = false;
+    return false;
+}
+
+// Safe I2C recovery
+static void recoverI2C() {
+    DDBG_PRINTLN("Attempting I2C recovery...");
+    Wire.end();
+    vTaskDelay(pdMS_TO_TICKS(100));
+    lcdInitialized = false;
+    lcdBegin();
+}
+
+// Set padded line with flicker prevention and error handling
+static void setLine(uint8_t line, const char* text) {
+    if (line > 1 || !lcdInitialized) return;
+
+    // Prepare padded string (fixed size, no dynamic allocation)
+    char padded[17] = { 0 };
+    strncpy(padded, text, 16);
+    padded[16] = '\0';
+
+    // Pad with spaces
+    for (int i = strlen(padded); i < 16; i++) {
+        padded[i] = ' ';
+    }
+
+    // Only update if changed
+    if (strcmp(prevLine[line], padded) != 0) {
+        // Try I2C operation with error handling
+        Wire.beginTransmission(0x27);
+        if (Wire.endTransmission() != 0) {
+            DDBG_PRINTLN("I2C error detected, attempting recovery");
+            recoverI2C();
+            return;
+        }
+
+        lcd.setCursor(0, line);
+        lcd.print(padded);
+        strcpy(prevLine[line], padded);
+
+        DDBG_PRINTF(" LCD%d [%s]", line, padded);
+        if (line == 1) DDBG_PRINTLN();
+    }
+}
+
+// Display task loop with watchdog and error handling
+void displayTask(void* pvParameters) {
+    DDBG_PRINTLN("Display task starting...");
+
+    // Initialize LCD
+    if (!lcdBegin()) {
+        DDBG_PRINTLN("Display task: LCD init failed, retrying every 5 seconds");
+    }
+
+    DisplayMessage msg;
+    uint32_t lastHeartbeat = millis();
+
+    while (true) {
+        // Receive message with timeout
+        if (xQueueReceive(displayQueue, &msg, pdMS_TO_TICKS(1000))) {
+            if (lcdInitialized) {
+                setLine(0, msg.line1);
+                setLine(1, msg.line2);
+            }
+            else {
+                DDBG_PRINTLN("LCD not initialized, skipping update");
+            }
+        }
+
+        // Periodic heartbeat and recovery check
+        uint32_t now = millis();
+        if (now - lastHeartbeat > 5000) {
+            lastHeartbeat = now;
+            DDBG_PRINTLN("Display task heartbeat");
+
+            // Try to reinitialize if failed
+            if (!lcdInitialized) {
+                lcdBegin();
+            }
+        }
+
+        // Yield to other tasks
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+// Call this from setup()
+void startDisplayTask() {
+    if (displayQueue == nullptr) {
+        displayQueue = xQueueCreate(8, sizeof(DisplayMessage));
+        if (displayQueue == nullptr) {
+            DDBG_PRINTLN("Failed to create display queue!");
+            return;
+        }
+    }
+
+    if (displayTaskHandle == nullptr) {
+        BaseType_t result = xTaskCreatePinnedToCore(
+            displayTask,
+            "LCDTask",
+            8192,  // Increased stack size
+            nullptr,
+            1,     
+            &displayTaskHandle,
+            CORE_COMM
+        );
+
+        if (result != pdPASS) {
+            DDBG_PRINTLN("Failed to create display task!");
+            while(1) delay(1000);
+        }
+        else {
+            DDBG_PRINTLN("Display task created successfully");
+        }
+    }
+}
+
+// Helper to send message (non-blocking)
+void sendToDisplay(const String& l1, const String& l2) {
+    if (!displayQueue) {
+        DDBG_PRINTLN("Display queue not initialized");
+        return;
+    }
+
+    DisplayMessage msg;
+    // Safe string copying
+    strncpy(msg.line1, l1.c_str(), 16);
+    strncpy(msg.line2, l2.c_str(), 16);
+    msg.line1[16] = '\0';
+    msg.line2[16] = '\0';
+
+    // Non-blocking send
+    if (xQueueSend(displayQueue, &msg, 0) != pdTRUE) {
+        DDBG_PRINTLN("Display queue full, message dropped");
+    }
+}
+
+void sendToDisplayIfChanged(const String& l1, const String& l2, uint32_t minIntervalMs) {
+    static uint32_t lastSendMs = 0;
+    static String prevL1 = "", prevL2 = "";
+
+    uint32_t now = millis();
+    if ((l1 != prevL1 || l2 != prevL2) && (now - lastSendMs >= minIntervalMs)) {
+        sendToDisplay(l1, l2);
+        prevL1 = l1;
+        prevL2 = l2;
+        lastSendMs = now;
+    }
+}

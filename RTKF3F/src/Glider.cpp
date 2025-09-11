@@ -31,7 +31,7 @@ void Glider::getInitialPosition(int32_t& n, int32_t& e, int32_t& d)  {
     n = _initialN; e = _initialE; d = _initialD;
 }
 
-bool Glider::checkCrossing(const GNSSModule::GNSSFix& fix, MessageType& event) {
+bool Glider::checkCrossing(const GNSSFix& fix, MessageType& event) {
     if (!_arena) return false;  // Safety
 
     static bool wasBetweenBases = false;

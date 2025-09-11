@@ -1,0 +1,224 @@
+﻿#include <Arduino.h>
+#include "RadioTask.h"
+#include "RadioModule.h"
+
+#if (configNUM_CORES > 1)
+#define CORE_APP   1
+#define CORE_COMM  0
+#define CORE_ANY   tskNO_AFFINITY
+#else
+#define CORE_APP   0
+#define CORE_COMM  0
+#define CORE_ANY   tskNO_AFFINITY
+#endif
+
+// ===== Config =====
+
+#ifndef RTCM_TX_CHUNK
+#define RTCM_TX_CHUNK      256  // how much we try to enqueue per API call (split further into RADIO_MAX_PAYLOAD)
+#endif
+
+#ifndef RADIO_TX_Q_SIZE
+#define RADIO_TX_Q_SIZE    64   // number of TX items in unified queue
+#endif
+
+#ifndef RADIO_RX_Q_SIZE
+#define RADIO_RX_Q_SIZE    16
+#endif
+
+// ===== Types =====
+struct RadioInitParams {
+    int8_t  pinMISO;
+    int8_t  pinMOSI;
+    int8_t  pinSCK;
+    int8_t  pinCS;
+    int8_t  pinIRQ;
+    uint8_t nodeId;
+    uint8_t networkId;
+    uint32_t frequency;
+};
+
+// One unified TX item: either raw bytes (RTCM/data) or a small control message
+enum class TxKind : uint8_t { DATA, STATUS };
+
+struct TxItem {
+    TxKind kind;
+    union {
+        struct {
+            uint8_t len;                    // <= RADIO_MAX_PAYLOAD
+            uint8_t bytes[RADIO_MAX_PAYLOAD];
+        } data;
+
+        struct {
+            uint8_t  destNode;
+            uint32_t destFreq;
+            uint32_t returnFreq;
+            uint8_t  msgType;
+            uint8_t  code;
+        } status;
+    };
+};
+
+// ===== Globals =====
+RadioModule* radioMod = nullptr;
+static TaskHandle_t    radioTaskHandle = nullptr;
+static QueueHandle_t   g_txQ = nullptr;  // unified TX queue (RTCM & status)
+static QueueHandle_t   g_rxQ = nullptr;  // inbound frames to app
+static RadioInitParams radioParams;                 // preserved init
+
+// ===== Forward =====
+static void radioTask(void* pv);
+
+// ===== Public API =====
+bool radioStartTask(int8_t cs, int8_t irq, int8_t miso, int8_t mosi, int8_t sck,
+    uint8_t nodeId, uint8_t networkId, uint32_t frequency)
+{
+    if (radioTaskHandle) return true; // already started
+
+    // Explicit assignment (prevents parameter-order bugs)
+    radioParams.pinCS = cs;
+    radioParams.pinIRQ = irq;
+    radioParams.pinMISO = miso;
+    radioParams.pinMOSI = mosi;
+    radioParams.pinSCK = sck;
+    radioParams.nodeId = nodeId;
+    radioParams.networkId = networkId;
+    radioParams.frequency = frequency;
+
+    g_txQ = xQueueCreate(RADIO_TX_Q_SIZE, sizeof(TxItem));
+    if (!g_txQ) {
+        Serial.println("❌ Failed to create TX queue");
+        return false;
+    }
+
+    g_rxQ = xQueueCreate(RADIO_RX_Q_SIZE, sizeof(RxPacket));
+    if (!g_rxQ) {
+        Serial.println("❌ Failed to create RX queue");
+        vQueueDelete(g_txQ); g_txQ = nullptr;
+        return false;
+    }
+
+    BaseType_t ok = xTaskCreatePinnedToCore(
+        radioTask, "RadioTask", 4096, &radioParams, 2, &radioTaskHandle, CORE_COMM
+    );
+
+    if (ok != pdPASS) {
+        Serial.println("❌ Failed to start RadioTask");
+        vQueueDelete(g_rxQ);  g_rxQ = nullptr;
+        vQueueDelete(g_txQ);  g_txQ = nullptr;
+        return false;
+    }
+
+    Serial.println("✅ Radio task started");
+    return true;
+}
+
+// Enqueue RTCM/data. Splits into RADIO_MAX_PAYLOAD chunks.
+bool radioTxRtcmWrite(const uint8_t* data, size_t len, TickType_t toTicks)
+{
+    if (!g_txQ || !data || !len) return false;
+
+    while (len) {
+        size_t n = min((size_t)RADIO_MAX_PAYLOAD, len);
+
+        TxItem item{};
+        item.kind = TxKind::DATA;
+        item.data.len = static_cast<uint8_t>(n);
+        memcpy(item.data.bytes, data, n);
+
+        if (xQueueSend(g_txQ, &item, toTicks) != pdTRUE) return false;
+
+        data += n;
+        len -= n;
+    }
+    return true;
+}
+
+// Back-compat: same as above, no wait
+bool radioSendRTCM(const uint8_t* data, size_t len) {
+    return radioTxRtcmWrite(data, len, 0);
+}
+
+// Enqueue a small control/status message via the same unified queue
+bool radioSendMsg(uint8_t destNode, uint32_t destFreq, uint32_t returnFreq,
+    uint8_t msgType, uint8_t code)
+{
+    if (!g_txQ) return false;
+
+    TxItem item{};
+    item.kind = TxKind::STATUS;
+    item.status.destNode = destNode;
+    item.status.destFreq = destFreq;
+    item.status.returnFreq = returnFreq;
+    item.status.msgType = msgType;
+    item.status.code = code;
+
+    return xQueueSend(g_txQ, &item, 0) == pdTRUE;
+}
+
+// App pulls inbound radio frames here (unchanged pattern)
+bool radioReceive(RxPacket& out, TickType_t toTicks) {
+    if (!g_rxQ) return false;
+    return xQueueReceive(g_rxQ, &out, toTicks) == pdTRUE;
+}
+
+// ===== Task =====
+static void radioTask(void* pvParameters)
+{
+    auto* params = reinterpret_cast<RadioInitParams*>(pvParameters);
+
+    static RadioModule radioInstance(params->pinCS, params->pinIRQ, true);
+    radioMod = &radioInstance;
+
+    if (!radioMod->init(params->pinMISO, params->pinMOSI, params->pinSCK,
+        params->nodeId, params->networkId, params->frequency)) {
+        Serial.println("❌ Radio init failed");
+        radioMod = nullptr;
+        vTaskDelete(nullptr);
+        return;
+    }
+    Serial.println("✅ Radio initialized");
+
+    uint8_t rxBuf[RADIO_MAX_PAYLOAD];
+
+    for (;;) {
+        // 1) RX: poll radio; forward to app RX queue (non-blocking)
+        size_t rxLen = sizeof(rxBuf);
+        if (radioMod->receive(rxBuf, rxLen)) {
+            if (rxLen && rxLen <= sizeof(rxBuf)) {
+                RxPacket pkt{};
+                pkt.from = radioMod->getSenderId();
+                pkt.rssi = radioMod->getLastRSSI(); // 0 if not supported
+                pkt.len = (uint8_t)min(rxLen, (size_t)RADIO_MAX_PAYLOAD);
+                memcpy(pkt.data, rxBuf, pkt.len);
+                (void)xQueueSend(g_rxQ, &pkt, 0); // drop if full
+            }
+            taskYIELD();
+        }
+
+        // 2) TX: take one item per loop (blocks briefly so we don't spin)
+        TxItem item;
+        if (xQueueReceive(g_txQ, &item, pdMS_TO_TICKS(5)) == pdTRUE) {
+
+            if (item.kind == TxKind::DATA) {
+                // Already chunked to RADIO_MAX_PAYLOAD by producer
+                radioMod->sendRTCM(item.data.bytes, item.data.len);
+                taskYIELD(); // give time to scheduler / idle
+
+            }
+            else { // TxKind::STATUS
+                radioMod->sendMessageCode(
+                    item.status.destNode,
+                    item.status.destFreq,
+                    item.status.returnFreq,
+                    item.status.msgType,
+                    item.status.code
+                );
+                taskYIELD();
+            }
+        }
+
+        // 3) Small breather regardless
+        vTaskDelay(1);
+    }
+}

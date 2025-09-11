@@ -30,7 +30,7 @@ public:
     void setInitialPosition(int32_t n, int32_t e, int32_t d);
     void getInitialPosition(int32_t& n, int32_t& e, int32_t& d);
 
-    bool checkCrossing(const GNSSModule::GNSSFix& fix, MessageType& event);
+    bool checkCrossing(const GNSSFix& fix, MessageType& event);
 
 private:
     uint8_t _id = 0;

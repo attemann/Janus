@@ -1,6 +1,6 @@
 #include <RTKF3F.h>
 
-const char* getMessageName(MessageType type) {
+/* const char* getMessageName(MessageType type) {
     switch (type) {
     case MessageType::MSG_RTCM:            return "RTCM"; break;
     case MessageType::MSG_RTCM_FRAGMENT:   return "RTCMFRAGMENT";break;
@@ -17,3 +17,4 @@ const char* getMessageName(MessageType type) {
     default:                     ;         return "UNKNOWN";break;
     }
 }
+*/
