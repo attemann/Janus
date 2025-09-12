@@ -23,7 +23,7 @@ void txMsg(MessageType code) {
 }
 
 // Pack N/E/D in centimeters (int32_t, little-endian) and send (12 bytes).
-void txRelPos32(const GNSSModule::GNSSFix& fix, bool isRelativeToBase) {
+void txRelPos32(const GNSSFix& fix, bool isRelativeToBase) {
     uint8_t msg[6];
 
     float n_cm = isRelativeToBase ? fix.relNorth : fix.adjNorth;
@@ -43,27 +43,5 @@ void txRelPos32(const GNSSModule::GNSSFix& fix, bool isRelativeToBase) {
     msg[5] = (uint8_t)((d_dm >> 8) & 0xFF);
 
     // radioMod is an object, not a pointer; also don't forget the semicolon.
-    radioMod.sendWithReturnFreq(NODEID_CD, FREQUENCY_CD, FREQUENCY_CD, msg, sizeof(msg));
-}
-
-void fixStatus(GNSSModule::GNSSFix fix) {
-    uint8_t s = 0; // 0 = no fix
-
-    switch (fix.type) {
-    case FIXTYPE::NOFIX:       s = 0; break;
-    case FIXTYPE::GPS:         s = 1; break; 
-    case FIXTYPE::DGPS:        s = 2; break;
-    case FIXTYPE::PPS:         s = 3; break;
-    case FIXTYPE::RTK_FLOAT:   s = 4; break;
-    case FIXTYPE::RTK_FIX:     s = 5; break;
-    case FIXTYPE::DEAD_RECK:   s = 6; break;
-    case FIXTYPE::MANUAL:      s = 7; break;
-    case FIXTYPE::SIM:         s = 8; break;
-    case FIXTYPE::OTHER:       s = 9; break;
-    }
-
-    uint8_t msg[2];
-	msg[0] = static_cast<uint8_t>(MessageType::MSG_FIXTYPE);
-    msg[1] = s;
     radioMod.sendWithReturnFreq(NODEID_CD, FREQUENCY_CD, FREQUENCY_CD, msg, sizeof(msg));
 }

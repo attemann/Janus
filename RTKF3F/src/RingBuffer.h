@@ -1,4 +1,5 @@
 // RingBuffer.h
+#pragma once
 #ifndef RING_BUFFER_H
 #define RING_BUFFER_H
 

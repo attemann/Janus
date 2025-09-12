@@ -1,60 +1,42 @@
 ﻿//RTKBase.ino - Updated for Ring Buffer GNSS Module
 #include <Arduino.h>
 #include <HardwareSerial.h>
-#include <SPI.h>
 #include <RFM69.h>
 
 #include <RTKF3F.h>
-#include <RadioModule.h>
 #include "RTKBase.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #define APPNAME "RTKBase 1.0"
 #define THIS_NODE_ID NODEID_RTKBASE
 #define COMMANDDELAY 1000  // ms to wait for GNSS command response
 
-inline constexpr int8_t  RFM69_IRQ = 8;
-inline constexpr int8_t  RFM69_CSS = 10;
-inline constexpr int8_t  RFM69_SCK = 12;
-inline constexpr int8_t  RFM69_MISO = 13;
-inline constexpr int8_t  RFM69_MOSI = 11;
-inline constexpr int8_t  RFM69_RST = -1;
+inline constexpr int8_t RFM69_MISO = 13;
+inline constexpr int8_t RFM69_MOSI = 11;
+inline constexpr int8_t RFM69_CSS = 10;
+inline constexpr int8_t RFM69_SCK = 12;
+inline constexpr int8_t RFM69_RST  = -1;
+inline constexpr int8_t RFM69_IRQ = 8;
+inline constexpr int8_t RFM69_IRQN = digitalPinToInterrupt(RFM69_IRQ);
+
+//ConfigManager config(APPNAME);
+
+// GNSS
+#define GNSS_BAUD 115200
+#define UART_RX   18
+#define UART_TX   17
+HardwareSerial SerialGNSS(2);
+GNSSModule gnss(SerialGNSS);
 
 // RADIO
 RadioModule Radio(RFM69_CSS, RFM69_IRQ, true);
 
-ConfigManager config(APPNAME);
-
-#define GNSS_BAUD 115200
-#define UART_RX   18
-#define UART_TX   17
-
-HardwareSerial SerialGNSS(2);
-GNSSModule gnss(SerialGNSS);
-
-GNSSFix fix, prevFix;  // Updated to use new GNSSFix struct
-
 unsigned int lastSpeakMs = 0;
 #define SPEAK_INTERVAL_MS 10000
+GNSSFix fix, prevFix;  // Updated to use new GNSSFix struct
 DeviceState deviceState = DeviceState::DEVICE_STARTING;
-
-void updateDisplayCountdown(int timeLeft) {
-    static uint32_t lastUpdate = 0;
-    static int lastTimeLeft = -1;
-
-    uint32_t now = millis();
-
-    // Only update if time changed AND at least 500ms passed
-    if (timeLeft != lastTimeLeft && (now - lastUpdate >= 500)) {
-        char line1[] = "Surveying";
-        char line2[17];
-        snprintf(line2, 17, "Time left: %ds", timeLeft);
-        sendToDisplay(line1, line2);  // Use char arrays instead of String
-        lastTimeLeft = timeLeft;
-        lastUpdate = now;
-    }
-}
-
-// Remove the old handleParsed function - not needed with new API
 
 void haltUnit(const String& msg1, const String& msg2) {
     Serial.print(msg1); Serial.print(": "); Serial.println(msg2);
@@ -62,30 +44,67 @@ void haltUnit(const String& msg1, const String& msg2) {
     while (true) delay(100);
 }
 
+// Print heap and stack status
+void printMemoryStatus(const char* tag) {
+    Serial.printf("\n--- Memory status: %s ---\n", tag);
+    Serial.printf("Free heap: %ld bytes\n", esp_get_free_heap_size());
+    Serial.printf("Min free heap ever: %ld bytes\n", esp_get_minimum_free_heap_size());
+    Serial.printf("Largest free block: %u bytes\n", heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
+    Serial.printf("Loop task stack watermark: %u words (~%u bytes)\n",
+        watermark, watermark * sizeof(StackType_t));
+    Serial.println("-----------------------------");
+}
+
 void setup() {
+
+    // Bring up Serial without blocking forever
     Serial.begin(115200);
-    while (!Serial);
-    delay(100);
+	delay(500);
     Serial.printf("%s booting\r\n", APPNAME);
 
-    // Start display task
+    printMemoryStatus("After Serial()");
+
+
+    //
+    // Start display
+    //
     lcdBegin();
+    sendToDisplay(APPNAME, "Starting");
+    printMemoryStatus("After Display()");
+
+    //
+    // Start GNSS
+    //
+    gnss.begin(GNSS_BAUD, UART_RX, UART_TX);
+    delay(1000);
+    while (SerialGNSS.available()) {
+        SerialGNSS.read();
+    }
+    printMemoryStatus("After GNSS Start()");
+
+    if (!gnss.sendWait("unlog", "response: OK", COMMANDDELAY)) haltUnit("GNSS", "Unlog failed");
+    delay(500);
+
+    //
+    // Set up Radio
+    //
+    printMemoryStatus("Before Radio()");
 
     if (!Radio.init(RFM69_MISO, RFM69_MOSI, RFM69_SCK, THIS_NODE_ID, NETWORK_ID, FREQUENCY_RTCM)) {
-        sendToDisplay("Radio task", "start failed");
-        while (true) delay(100);
+        haltUnit("Radio", "Config failed");
     }
-
     Radio.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_DEVICESTATE,
         static_cast<uint8_t>(DEVICE_STARTING));
 
-    sendToDisplay(APPNAME, "Starting");
+    printMemoryStatus("After Radio()");
 
-    gnss.begin(GNSS_BAUD, UART_RX, UART_TX, &Radio);
-    if (!gnss.sendWait("unlog"        , "response: OK", COMMANDDELAY) ||
-        !gnss.sendWait("versiona com2", "response: OK", COMMANDDELAY)) haltUnit("GNSS", "Config failed");
+
+    gnss.setRadio(&Radio);  
 
     deviceState = DeviceState::DEVICE_STARTING;
+    printMemoryStatus("Before loop()");
+
 }
 
 void loop() {
@@ -93,12 +112,13 @@ void loop() {
     switch (deviceState) {
     case DeviceState::DEVICE_STARTING:
         sendToDisplay("Starting", "Getting fix");
-        if (!gnss.sendWait("unlog"               , "response: OK", COMMANDDELAY) ||
-            !gnss.sendWait("config signalgroup 2", "response: OK", COMMANDDELAY) ||
-            !gnss.sendWait("config pvtalg multi" , "response: OK", COMMANDDELAY) ||
-            !gnss.sendWait("mode rover"          , "response: OK", COMMANDDELAY) ||
-            !gnss.sendWait("gpgga com2 1"        , "response: OK", COMMANDDELAY) ||
-            !gnss.sendWait("saveconfig"          , "response: OK", COMMANDDELAY)) haltUnit("GNSS", "Start failed");
+        if (!gnss.sendWait("unlog"               , "response: OK", COMMANDDELAY)) GDBG_PRINTLN("unlog failed");
+        if (!gnss.sendWait("config signalgroup 2", "response: OK", COMMANDDELAY)) GDBG_PRINTLN("config signalgroup 2");
+        if (!gnss.sendWait("config pvtalg multi" , "response: OK", COMMANDDELAY)) GDBG_PRINTLN("config pvtalg multi");
+        if (!gnss.sendWait("mode rover"          , "response: OK", COMMANDDELAY)) GDBG_PRINTLN("mode rover failed");
+        if (!gnss.sendWait("gpgga com2 1"        , "response: OK", COMMANDDELAY)) GDBG_PRINTLN("gpgga com2 1 failed");
+        if (!gnss.sendWait("saveconfig"          , "response: OK", COMMANDDELAY)) GDBG_PRINTLN("saveconfig failed");
+
         Radio.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_DEVICESTATE,
             static_cast<uint8_t>(DeviceState::DEVICE_GETTINGFIX));
         deviceState = DeviceState::DEVICE_GETTINGFIX;
@@ -112,9 +132,7 @@ void loop() {
             snprintf(line2, 17, "> %d satellites", fix.SIV);
             sendToDisplay(line1, line2);
 
-            // Print fix info
-            Serial.printf("GGA OK: Time=%02d:%02d:%.2f FIX=%u SIV=%d HDOP=%.2f lat=%.6f lon=%.6f elev=%.2f\n",
-                fix.hour, fix.minute, fix.second, (unsigned)fix.type, fix.SIV, fix.HDOP, fix.lat, fix.lon, fix.elevation);
+			gnss.printFix(fix); // Debug print
 
             // Send satellite count if changed
             if (prevFix.SIV != fix.SIV) {
@@ -147,7 +165,6 @@ void loop() {
         const uint32_t elapsed = millis() - surveyStartMs;
         if (elapsed < SURVEYINTIME) {
             uint32_t remaining = (SURVEYINTIME - elapsed) / 1000;
-            updateDisplayCountdown((int)remaining);
 
             if (millis() - lastSpeakMs >= SPEAK_INTERVAL_MS) {
                 Serial.printf("BASE_SURVEYING: Remaining: %lus\n", (unsigned long)remaining);
@@ -161,18 +178,19 @@ void loop() {
             if (!gnss.sendWait("unlog"           , "response: OK", COMMANDDELAY) ||
                 !gnss.sendWait("rtcm1006 com2 10", "response: OK", COMMANDDELAY) ||
                 !gnss.sendWait("rtcm1033 com2 60", "response: OK", COMMANDDELAY) ||
-                !gnss.sendWait("rtcm1074 com2 2" , "response: OK", COMMANDDELAY) ||
-                !gnss.sendWait("rtcm1084 com2 2" , "response: OK", COMMANDDELAY) ||
                 !gnss.sendWait("rtcm1094 com2 5" , "response: OK", COMMANDDELAY) ||
-                //gnss.sendWait("rtcm1124 com2 5", "response: OK", COMMANDDELAY) ||
-				gnss.sendWait("saveconfig"       , "response: OK", COMMANDDELAY)) haltUnit("GNSS", "RTCM setup failed");
-            delay(1000);
+                !gnss.sendWait("rtcm1124 com2 5" , "response: OK", COMMANDDELAY) ||
+                !gnss.sendWait("rtcm1074 com2 2" , "response: OK", COMMANDDELAY) ||
+                !gnss.sendWait("rtcm1084 com2 2" , "response: OK", COMMANDDELAY))
+                { haltUnit("GNSS", "RTCM setup failed"); }
+
+            delay(500);
 
             Radio.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_DEVICESTATE,
                 static_cast<uint8_t>(DeviceState::DEVICE_OPERATING));
 
-            gnss.clearUARTBuffer();
             sendToDisplay(APPNAME, "Operating");
+            gnss.clearUARTBuffer();
             deviceState = DeviceState::DEVICE_OPERATING;
         }
         break;

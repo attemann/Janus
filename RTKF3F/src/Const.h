@@ -22,3 +22,9 @@ static constexpr uint32_t FREQUENCY_CD = 868200000;
 #define THRESHOLD_AIRBORNE 9.0f  // 3 m/s avg over 3 secs
 #define THRESHOLD_LANDED 1.0f    // 1 m/s avg over 3 secs
 
+// UBX sync bytes and message details
+#define UBX_SYNC1            0xB5
+#define UBX_SYNC2            0x62
+#define UBX_CLASS_NAV        0x01
+#define UBX_ID_RELPOSNED     0x3C
+#define UBX_RELPOSNED_LEN    40

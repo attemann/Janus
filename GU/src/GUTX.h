@@ -7,8 +7,8 @@
 #include <Arduino.h>
 #include <RTKF3F.h>
 
-void txRelPos32(const GNSSModule::GNSSFix& fix, bool isRelativeToBase);
+void txRelPos32(const GNSSFix& fix, bool isRelativeToBase);
 void txMsg(MessageType code);
-void fixStatus(GNSSModule::GNSSFix fix);
+
 
 #endif
