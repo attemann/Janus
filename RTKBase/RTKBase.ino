@@ -1,6 +1,7 @@
 ﻿//RTKBase.ino - Updated for Ring Buffer GNSS Module
 #include <Arduino.h>
 #include <HardwareSerial.h>
+#include <SPI.h>
 #include <RFM69.h>
 
 #include <RTKF3F.h>
@@ -8,6 +9,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_task_wdt.h"
 
 #define APPNAME "RTKBase 1.0"
 #define THIS_NODE_ID NODEID_RTKBASE
@@ -35,8 +37,10 @@ RadioModule Radio(RFM69_CSS, RFM69_IRQ, true);
 
 unsigned int lastSpeakMs = 0;
 #define SPEAK_INTERVAL_MS 10000
+unsigned long msOperStart = 0;
 GNSSFix fix, prevFix;  // Updated to use new GNSSFix struct
 DeviceState deviceState = DeviceState::DEVICE_STARTING;
+
 
 void haltUnit(const String& msg1, const String& msg2) {
     Serial.print(msg1); Serial.print(": "); Serial.println(msg2);
@@ -56,8 +60,47 @@ void printMemoryStatus(const char* tag) {
     Serial.println("-----------------------------");
 }
 
+
+// Optional: Add buffer monitoring function
+void monitorSystem() {
+    static uint32_t lastCheck = 0;
+
+    if (millis() - lastCheck > 5000) {
+        lastCheck = millis();
+
+        // Check GNSS buffer
+        size_t bufferUsed = gnss.getBufferUsage();
+        size_t bufferTotal = bufferUsed + gnss.getBufferFree();
+        float bufferPercent = (float)bufferUsed * 100.0 / bufferTotal;
+
+        Serial.printf("System Status:\n");
+        Serial.printf("GNSS Buffer: %zu/%zu bytes (%.1f%%)\n",
+            bufferUsed, bufferTotal, (float)bufferUsed * 100.0 / bufferTotal);
+        Serial.printf("  Free Heap: %lu bytes\n", ESP.getFreeHeap());
+        Serial.printf("  Min Free Heap: %lu bytes\n", ESP.getMinFreeHeap());
+
+        // Warnings
+        if (bufferPercent > 75.0) {
+            Serial.println("  WARNING: GNSS buffer high usage");
+        }
+
+        if (ESP.getFreeHeap() < 20000) {
+            Serial.println("  WARNING: Low memory");
+        }
+    }
+}
+
 void setup() {
 
+    esp_task_wdt_config_t wdt_config = {
+        .timeout_ms = 10000,
+        .trigger_panic = true
+    };
+    esp_task_wdt_init(&wdt_config);
+    esp_task_wdt_add(NULL);
+
+    Wire.end(); Wire.begin();
+    SPI.end(); SPI.begin();
     // Bring up Serial without blocking forever
     Serial.begin(115200);
 	delay(500);
@@ -108,6 +151,17 @@ void setup() {
 }
 
 void loop() {
+    esp_task_wdt_reset();
+
+    // Monitor stack usage
+    static uint32_t lastStackCheck = 0;
+    if (millis() - lastStackCheck > 5000) {
+        UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
+        if (watermark < 500) {  // Less than 500 words (~2KB) remaining
+            Serial.printf("WARNING: Low stack! %u words remaining\n", watermark);
+        }
+        lastStackCheck = millis();
+    }
 
     switch (deviceState) {
     case DeviceState::DEVICE_STARTING:
@@ -189,14 +243,25 @@ void loop() {
             Radio.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_DEVICESTATE,
                 static_cast<uint8_t>(DeviceState::DEVICE_OPERATING));
 
-            sendToDisplay(APPNAME, "Operating");
+            sendToDisplay(APPNAME, "Run 00:00:00");
             gnss.clearUARTBuffer();
+            msOperStart = millis();
             deviceState = DeviceState::DEVICE_OPERATING;
         }
         break;
     }
 
-    case DeviceState::DEVICE_OPERATING:
+    case DeviceState::DEVICE_OPERATING: {
+
+        unsigned long seconds = (millis()-msOperStart) / 1000;
+        unsigned long minutes = seconds / 60;
+        unsigned long hours = minutes / 60;
+		char timeStr[9];
+
+		snprintf(timeStr, sizeof(timeStr), "%02lu:%02lu:%02lu", hours, minutes % 60, seconds % 60);
+
+        sendToDisplay("Operating", timeStr);
+
         // Process RTCM data continuously
         gnss.pumpRTCM();
 
@@ -207,51 +272,14 @@ void loop() {
             Radio.printRTCMTypeReport();
             lastUtilReport = millis();
         }
-
-        // Monitor buffer usage
-        //static uint32_t lastBufferCheck = 0;
-        //if (millis() - lastBufferCheck > 10000) {
-        //    lastBufferCheck = millis();
-        //    size_t used = gnss.getBufferUsage();
-        //    size_t total = used + gnss.getBufferFree();
-        //    Serial.printf("GNSS Buffer: %d/%d bytes (%.1f%%)\n", used, total, (float)used * 100.0 / total);
-        //    if (used > total * 0.8) {  // 80% full warning
-        //        Serial.println("Warning: GNSS buffer high usage");
-        //    }
-        //}
         break;
-
+    }
     default:
         Serial.println("Unknown state");
         break;
     }
+
+    monitorSystem();
+
 }
 
-// Optional: Add buffer monitoring function
-void monitorSystem() {
-    static uint32_t lastCheck = 0;
-
-    if (millis() - lastCheck > 5000) {
-        lastCheck = millis();
-
-        // Check GNSS buffer
-        size_t bufferUsed = gnss.getBufferUsage();
-        size_t bufferTotal = bufferUsed + gnss.getBufferFree();
-        float bufferPercent = (float)bufferUsed * 100.0 / bufferTotal;
-
-        Serial.printf("System Status:\n");
-        Serial.printf("GNSS Buffer: %zu/%zu bytes (%.1f%%)\n",
-            bufferUsed, bufferTotal, (float)bufferUsed * 100.0 / bufferTotal);
-        Serial.printf("  Free Heap: %lu bytes\n", ESP.getFreeHeap());
-        Serial.printf("  Min Free Heap: %lu bytes\n", ESP.getMinFreeHeap());
-
-        // Warnings
-        if (bufferPercent > 75.0) {
-            Serial.println("  WARNING: GNSS buffer high usage");
-        }
-
-        if (ESP.getFreeHeap() < 20000) {
-            Serial.println("  WARNING: Low memory");
-        }
-    }
-}

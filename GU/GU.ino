@@ -1,9 +1,12 @@
 ﻿// GU.ino
 #include <Arduino.h>
-#include <SPI.h>
+#include <HardwareSerial.h>
+//#include <SPI.h>
 #include <RFM69.h>
 #include <RTKF3F.h>
 #include "GU.h"
+#include "Glider.h"
+#include "Arena.h"
 
 #define APPNAME "GU 1.0"
 #define THIS_NODE_ID NODEID_GU
@@ -18,8 +21,7 @@ inline constexpr int8_t RFM69_IRQ  = 16;
 inline constexpr int8_t RFM69_IRQN = digitalPinToInterrupt(RFM69_IRQ);
 inline constexpr int8_t RFM69_RST  = -1;
 
-RadioModule radio(RFM69_CSS, RFM69_IRQ, true);
-RadioModule::RTCM_Reassembler reassembler;
+
 
 bool showFix = true;
 bool showGngga = false;
@@ -32,6 +34,9 @@ bool showGngga = false;
 HardwareSerial SerialGNSS(2);
 GNSSModule gnss(SerialGNSS);
 GNSSFix fix;
+
+RadioModule radio(RFM69_CSS, RFM69_IRQ, true);
+RadioModule::RTCM_Reassembler reassembler;
 
 Arena  arena;
 Glider glider;
@@ -60,18 +65,20 @@ void setup() {
     Serial.println("Radio started");
 
     // GNSS
-    gnss.begin(GNSS_BAUD, UART_RX, UART_TX, &radio); 
+    gnss.begin(GNSS_BAUD, UART_RX, UART_TX);
+	gnss.setRadio(&radio);  
     
     delay(500);
-	if (!gnss.sendWait("unlog", "response: OK", COMMANDDELAY)) haltUnit("GNSS", "No response");
+    if (!gnss.sendWait("unlog", "response: OK", COMMANDDELAY)) {
+        //haltUnit("GNSS", "No response");
+    }
 
+	bool gnssConnected = false;
     const char* ports[] = { "com1", "com2", "com3" };
     char cmd[32];
 
-	bool gnssConnected = false;
-
     for (int i = 0; i < 3; ++i) {
-        snprintf(cmd, sizeof(cmd), "versiona %s\r\n", ports[i]);
+        snprintf(cmd, sizeof(cmd), "versiona %s", ports[i]);
         Serial.printf("Trying %s...\n", ports[i]);
 
         if (gnss.sendWait(cmd, "#VERSIONA", COMMANDDELAY)) {
@@ -85,7 +92,7 @@ void setup() {
 
     if (!gnssConnected) {
         Serial.println("❌ No GNSS COM port responded.");
-        haltUnit("GNSS", "no reply");
+        //haltUnit("GNSS", "no reply");
     }
 
     // Configure rover + NMEA

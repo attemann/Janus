@@ -1,8 +1,8 @@
 #include <Arduino.h>
 #include <HardwareSerial.h>
 
-#define UART_RX 18
-#define UART_TX 17
+#define UART_RX 4
+#define UART_TX 5
 
 HardwareSerial SerialGNSS(2);
 
