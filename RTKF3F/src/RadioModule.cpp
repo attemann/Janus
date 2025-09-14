@@ -246,9 +246,11 @@
         bool wasFragmented = (len > MAX_PAYLOAD);
         if (len <= MAX_PAYLOAD) {
             _radio.send(0, data, static_cast<uint8_t>(len)); // Fixed syntax
+			Serial.printf("RTCM: Sent single packet of %u bytes\n", (unsigned)len);
         }
         else {
             sendFragmentedRTCM(data, len);
+			Serial.printf("RTCM: Sent fragmented packet of %u bytes\n", (unsigned)len);
         }
 
         yield(); // Yield again after transmission

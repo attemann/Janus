@@ -165,36 +165,160 @@ void GNSSModule::pumpRTCM() {
     static size_t framePos = 0;
     static size_t frameLen = 0;
     static bool inFrame = false;
+    static bool lengthKnown = false;
+    static unsigned long frameStartTime = 0;
+    static uint32_t totalFrames = 0;
+    static uint32_t crcErrors = 0;
+    static uint32_t syncLosses = 0;
 
     uint8_t byte;
+
     while (_buffer.read(byte)) {
         if (!inFrame) {
+            // Look for RTCM frame start (0xD3)
             if (byte == 0xD3) {
                 frameData[0] = byte;
                 framePos = 1;
+                frameLen = 0;
                 inFrame = true;
+                lengthKnown = false;
+                frameStartTime = millis();
+                continue;
             }
+            // Skip non-frame bytes
             continue;
         }
 
+        // We're in a frame - add the byte
         frameData[framePos++] = byte;
 
-        if (framePos == 3) {
+        // Check for frame timeout (partial frame stuck)
+        if (millis() - frameStartTime > 1000) {  // 1 second timeout
+            Serial.printf("⚠️ RTCM frame timeout after %lu ms, pos=%u\n",
+                millis() - frameStartTime, framePos);
+            inFrame = false;
+            framePos = 0;
+            lengthKnown = false;
+            syncLosses++;
+            continue;
+        }
+
+        // Once we have 3 bytes, we can determine frame length
+        if (framePos == 3 && !lengthKnown) {
             uint16_t payloadLen = ((frameData[1] & 0x03) << 8) | frameData[2];
-            frameLen = 3 + payloadLen + 3;
-            if (frameLen > sizeof(frameData)) {
+            frameLen = 3 + payloadLen + 3;  // header + payload + CRC
+            lengthKnown = true;
+
+            // Sanity check on frame length
+            if (frameLen > sizeof(frameData) || frameLen < 6) {
+                Serial.printf("⚠️ Invalid RTCM frame length: %u bytes (payload=%u)\n",
+                    frameLen, payloadLen);
                 inFrame = false;
                 framePos = 0;
+                lengthKnown = false;
+                syncLosses++;
+                continue;
             }
         }
 
-        if (inFrame && framePos >= frameLen) {
+        // Check if we have a complete frame
+        if (lengthKnown && framePos >= frameLen) {
+            totalFrames++;
+
+            // Verify CRC before processing
             if (verifyRTCMCRC24(frameData, frameLen)) {
-                if (_radio) _radio->sendRTCM(frameData, frameLen);
+                // Extract message type for logging
+                uint16_t messageType = 0;
+                if (frameLen >= 6) {
+                    messageType = (frameData[3] << 4) | (frameData[4] >> 4);
+                }
+
+                Serial.printf("✓ RTCM TX: type=%u, %u bytes\n", messageType, frameLen);
+
+                // Send via radio
+                if (_radio) {
+                    _radio->sendRTCM(frameData, frameLen);
+                }
+                else {
+                    Serial.println("⚠️ No radio module available");
+                }
             }
+            else {
+                crcErrors++;
+                Serial.printf("⚠️ RTCM CRC error: frame %u bytes", frameLen);
+
+                // Add hex dump for first CRC error to help debug
+                if (crcErrors <= 3) {
+                    Serial.print(" [");
+                    for (size_t i = 0; i < min(frameLen, (size_t)12); i++) {
+                        Serial.printf("%02X", frameData[i]);
+                        if (i < min(frameLen, (size_t)12) - 1) Serial.print(" ");
+                    }
+                    if (frameLen > 12) Serial.print("...");
+                    Serial.print("]");
+                }
+                Serial.println();
+
+                // Try to resync by looking for next 0xD3 in current frame
+                bool foundSync = false;
+                for (size_t i = 1; i < framePos; i++) {
+                    if (frameData[i] == 0xD3) {
+                        // Found potential new frame start
+                        size_t remaining = framePos - i;
+                        memmove(frameData, frameData + i, remaining);
+                        framePos = remaining;
+                        frameLen = 0;
+                        lengthKnown = false;
+                        frameStartTime = millis();
+                        foundSync = true;
+                        Serial.printf("↻ Resynced at offset %u, %u bytes remaining\n", i, remaining);
+                        break;
+                    }
+                }
+
+                if (!foundSync) {
+                    // No sync found, restart completely
+                    inFrame = false;
+                    framePos = 0;
+                    lengthKnown = false;
+                    syncLosses++;
+                }
+            }
+
+            if (!inFrame || (inFrame && lengthKnown && framePos >= frameLen)) {
+                // Reset for next frame if we're done
+                inFrame = false;
+                framePos = 0;
+                lengthKnown = false;
+            }
+        }
+
+        // Safety check: prevent buffer overrun
+        if (framePos >= sizeof(frameData)) {
+            Serial.printf("⚠️ RTCM frame buffer overrun at %u bytes\n", framePos);
             inFrame = false;
             framePos = 0;
+            lengthKnown = false;
+            syncLosses++;
         }
+    }
+
+    // Periodic statistics (every 30 seconds)
+    static unsigned long lastStatsTime = 0;
+    if (millis() - lastStatsTime >= 30000) {
+        if (totalFrames > 0 || crcErrors > 0) {
+            float errorRate = (totalFrames + crcErrors) > 0 ?
+                (crcErrors * 100.0f) / (totalFrames + crcErrors) : 0.0f;
+
+            Serial.printf("📊 RTCM Stats: %u frames OK, %u CRC errors (%.1f%%), %u sync losses\n",
+                totalFrames, crcErrors, errorRate, syncLosses);
+
+            // Reset counters for next period
+            totalFrames = 0;
+            crcErrors = 0;
+            syncLosses = 0;
+        }
+        lastStatsTime = millis();
     }
 }
 
@@ -244,6 +368,7 @@ bool GNSSModule::parseGGA(const char* line, GNSSFix& fix) {
     if (f[7]) fix.SIV = atoi(f[7]);
     if (f[8]) fix.HDOP = atof(f[8]);
     if (f[9]) fix.elevation = atof(f[9]);
+    //Serial.printf("%s\r\n",line);
     return true;
 }
 
