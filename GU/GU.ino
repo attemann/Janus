@@ -1,7 +1,7 @@
 ﻿// GU.ino
 #include <Arduino.h>
 #include <HardwareSerial.h>
-//#include <SPI.h>
+#include "_macros.h"
 #include <RFM69.h>
 #include <RTKF3F.h>
 #include "GU.h"
@@ -13,11 +13,12 @@
 #define COMMANDDELAY 1000  // ms to wait for GNSS command response
 
 // Radio
-inline constexpr int8_t RFM69_MISO = 20;
-inline constexpr int8_t RFM69_MOSI = 18;
-inline constexpr int8_t RFM69_SCK  = 19;
-inline constexpr int8_t RFM69_CSS  = 21;
-inline constexpr int8_t RFM69_IRQ  = 16;
+inline constexpr int8_t RFM69_CSS  = 21; // Hvit
+inline constexpr int8_t RFM69_SCK  = 19; // Grå
+inline constexpr int8_t RFM69_MOSI = 18; // Magenta
+inline constexpr int8_t RFM69_MISO = 20; // Blå
+
+inline constexpr int8_t RFM69_IRQ  = 16; // Gul
 inline constexpr int8_t RFM69_IRQN = digitalPinToInterrupt(RFM69_IRQ);
 inline constexpr int8_t RFM69_RST  = -1;
 
@@ -94,13 +95,14 @@ void setup() {
     }
 
     // Configure rover + NMEA
-    if (!gnss.sendWait("unlog"                , "response: OK", COMMANDDELAY) ||
-        !gnss.sendWait("config signalgroup 2" , "response: OK", COMMANDDELAY) ||
-        !gnss.sendWait("config pvtalg multi"  , "response: OK", COMMANDDELAY) ||
-        !gnss.sendWait("config rtk timeout 60", "response: OK", COMMANDDELAY) ||
-        !gnss.sendWait("mode rover"           , "response: OK", COMMANDDELAY) ||
-        !gnss.sendWait("gpgga 1"              , "response: OK", COMMANDDELAY) ||
-        !gnss.sendWait("saveconfig"           , "response: OK", COMMANDDELAY)) { 
+    if (!gnss.sendWait("unlog"                   , "response: OK", COMMANDDELAY) ||
+        !gnss.sendWait("config signalgroup 2"    , "response: OK", COMMANDDELAY) ||
+        !gnss.sendWait("config pvtalg multi"     , "response: OK", COMMANDDELAY) ||
+        !gnss.sendWait("config rtk timeout 30"   , "response: OK", COMMANDDELAY) ||
+        !gnss.sendWait("config rtk reliability 1", "response: OK", COMMANDDELAY) ||
+        !gnss.sendWait("mode rover"              , "response: OK", COMMANDDELAY) ||
+        !gnss.sendWait("gpgga 1"                 , "response: OK", COMMANDDELAY) ||
+        !gnss.sendWait("saveconfig"              , "response: OK", COMMANDDELAY)) { 
 
         radio.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_DEVICESTATE, DEVICE_STARTING);
         Serial.println("RTKF3F Glider unit ready!");
@@ -114,7 +116,7 @@ void setup() {
         // Use GNSSModule's pumpGGA function instead of pumpGnssOnce
         if (gnss.pumpGGA(fix)) {
             if (showFix) {
-                Serial.printf("GGA OK: Time=%02d:%02d:%.2f FIX=%u SIV=%d HDOP=%.2f lat=%.6f lon=%.6f elev=%.2f\n",
+                Serial.printf("GGA OK: Time=%02d:%02d:%.2f" ANSI_GREEN " FIX = %u " ANSI_RESET "SIV = %d HDOP = %.2f lat = %.6f lon = %.6f elev = %.2f\n",
                     fix.hour, fix.minute, fix.second, (unsigned)fix.type, fix.SIV, fix.HDOP, fix.lat, fix.lon, fix.elevation);
             }
 
@@ -138,8 +140,8 @@ void setup() {
 
         if (radio.receive(buffer, len) && len > 0) {
             // Log received packet info
-            Serial.printf("RX: %u bytes from node %u (RSSI: %d)\n",
-                len, radio.getSenderId(), radio.getLastRSSI());
+            //Serial.printf("RX: %u bytes from node %u (RSSI: %d)\n",
+            //    len, radio.getSenderId(), radio.getLastRSSI());
 
             handleRadioMessage(buffer, len);
         }
@@ -176,16 +178,70 @@ void setup() {
     }
 
     void handleFullRTCM(const uint8_t* buffer, size_t len) {
-        if (len <= 1) {
-            Serial.println("⚠️ Invalid RTCM packet: too short");
+        //Serial.printf("🔍 Full RTCM Debug: received %u bytes\n", len);
+
+        if (len < 6) {  // Minimum RTCM frame size
+            Serial.printf("⚠️ Invalid RTCM packet: too short (%u bytes, minimum 6)\n", len);
             return;
         }
 
-        const uint8_t* rtcm = buffer + 1;     // Skip MSG_RTCM byte
-        size_t rlen = len - 1;
+        // Print raw packet for debugging
+        //Serial.print("Raw packet: ");
+        //for (size_t i = 0; i < min(len, (size_t)16); i++) {
+        //    Serial.printf("%02X ", buffer[i]);
+        //}
+        //if (len > 16) Serial.print("...");
+        //Serial.println();
+
+        // Since MSG_RTCM = 0xD3, we expect raw RTCM data (no wrapper)
+        if (buffer[0] != 0xD3) {
+            Serial.printf("⚠️ Expected RTCM start (0xD3), got 0x%02X\n", buffer[0]);
+            return;
+        }
+
+        // This IS the RTCM data (no header to skip)
+        const uint8_t* rtcm = buffer;     // No skipping needed
+        size_t rlen = len;                // Full length
+
+        Serial.printf("✓ RTCM packet: %u bytes starting with 0xD3\n", rlen);
+
+        // Extract and verify length
+        uint16_t payloadLen = ((rtcm[1] & 0x03) << 8) | rtcm[2];
+        size_t expectedLen = 3 + payloadLen + 3; // header + payload + CRC
+
+        //Serial.printf("RTCM length check: payload=%u, expected total=%u, actual=%u\n",
+        //    payloadLen, expectedLen, rlen);
+
+        if (expectedLen != rlen) {
+            Serial.printf("⚠️ RTCM length mismatch: expected %u, got %u\n", expectedLen, rlen);
+            // Don't return here - try to process anyway in case it's just a length issue
+        }
 
         if (!validateAndInjectRTCM(rtcm, rlen, "full")) {
             Serial.println("⚠️ Failed to process full RTCM packet");
+
+            // Additional debugging - show what validateAndInjectRTCM saw
+            Serial.println("🔍 Detailed validation check:");
+
+            // Manual RTCM validation steps
+            Serial.printf("  - Start byte: 0x%02X %s\n", rtcm[0],
+                (rtcm[0] == 0xD3) ? "✓" : "✗");
+
+            Serial.printf("  - Reserved bits: 0x%02X %s\n", rtcm[1] & 0xFC,
+                ((rtcm[1] & 0xFC) == 0) ? "✓" : "✗");
+
+            if (rlen >= 6) {
+                uint16_t msgType = (rtcm[3] << 4) | (rtcm[4] >> 4);
+                Serial.printf("  - Message type: %u\n", msgType);
+            }
+
+            // Try CRC check manually
+            if (gnss.isValidRTCM(rtcm, rlen)) {
+                Serial.println("  - GNSS validation: ✓");
+            }
+            else {
+                Serial.println("  - GNSS validation: ✗");
+            }
         }
     }
 
@@ -196,11 +252,11 @@ void setup() {
         }
 
         // Extract fragment info for logging
-        uint8_t fragIndex = buffer[1];
-        uint8_t totalFrags = buffer[2];
-        uint8_t msgId = buffer[3];
+        //uint8_t fragIndex = buffer[1];
+        //uint8_t totalFrags = buffer[2];
+        //uint8_t msgId = buffer[3];
 
-        Serial.printf("RTCM fragment %u/%u (msgId=%u)\n", fragIndex + 1, totalFrags, msgId);
+        // Serial.printf("RTCM fragment %u/%u (msgId=%u)\n", fragIndex + 1, totalFrags, msgId);
 
         // Accept the fragment (skip the 4-byte header)
         reassembler.acceptFragment(buffer, len);
@@ -232,7 +288,7 @@ void setup() {
 
         // Extract and log message type
         uint16_t type = gnss.getRTCMType(rtcm, rlen);
-        Serial.printf("✓ RTCM %s: type [%4u] %u bytes\n", source, type, (unsigned)rlen);
+        Serial.printf("✓ RTCM %s: type " ANSI_YELLOW "[%4u]" ANSI_RESET " %u bytes\n", source, type, (unsigned)rlen);
 
         // Inject to GNSS receiver
         size_t written = SerialGNSS.write(rtcm, rlen);

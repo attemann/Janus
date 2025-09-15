@@ -71,7 +71,7 @@ static void setLine(uint8_t line, const char* text) {
         lcd.print(padded);
         strcpy(prevLine[line], padded);
 
-        DDBG_PRINTF(" LCD%d [%s]", line, padded);
+        //DDBG_PRINTF(" LCD%d [%s]", line, padded);
         if (line == 1) DDBG_PRINTLN();
     }
 }

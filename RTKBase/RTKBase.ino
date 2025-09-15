@@ -154,14 +154,14 @@ void loop() {
     esp_task_wdt_reset();
 
     // Monitor stack usage
-    static uint32_t lastStackCheck = 0;
-    if (millis() - lastStackCheck > 5000) {
-        UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
-        if (watermark < 500) {  // Less than 500 words (~2KB) remaining
-            Serial.printf("WARNING: Low stack! %u words remaining\n", watermark);
-        }
-        lastStackCheck = millis();
-    }
+    //static uint32_t lastStackCheck = 0;
+    //if (millis() - lastStackCheck > 5000) {
+    //    UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
+    //    if (watermark < 500) {  // Less than 500 words (~2KB) remaining
+    //        Serial.printf("WARNING: Low stack! %u words remaining\n", watermark);
+    //    }
+    //    lastStackCheck = millis();
+    //}
 
     switch (deviceState) {
     case DeviceState::DEVICE_STARTING:
@@ -199,9 +199,10 @@ void loop() {
             if (fix.type > 0 && fix.SIV > 8) {
                 Radio.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_DEVICESTATE,
                     static_cast<uint8_t>(DeviceState::DEVICE_SURVEYING));
-                if (!gnss.sendWait("unlog"            , "response: OK", COMMANDDELAY) ||
-                    !gnss.sendWait("mode base time 15", "response: OK", COMMANDDELAY) ||
-                    !gnss.sendWait("saveconfig"       , "response: OK", COMMANDDELAY)) haltUnit("GNSS", "Start failed");
+                if (!gnss.sendWait("unlog"                          , "response: OK", COMMANDDELAY) ||
+                    !gnss.sendWait("mode base time 15"              , "response: OK", COMMANDDELAY) ||
+                    !gnss.sendWait("config antennadeltahen 0 0 2.0" , "response: OK", COMMANDDELAY) ||
+                    !gnss.sendWait("saveconfig"                     , "response: OK", COMMANDDELAY)) haltUnit("GNSS", "Start failed");
                 deviceState = DeviceState::DEVICE_SURVEYING;
             }
             prevFix = fix;
@@ -231,12 +232,9 @@ void loop() {
             sendToDisplay("Configuring GPS", "RTK parameters");
             if (!gnss.sendWait("unlog"           , "response: OK", COMMANDDELAY) ||
                 !gnss.sendWait("rtcm1006 com2 10", "response: OK", COMMANDDELAY) ||
-                !gnss.sendWait("rtcm1033 com2 60", "response: OK", COMMANDDELAY) ||
-                !gnss.sendWait("rtcm1094 com2 5" , "response: OK", COMMANDDELAY) ||
-                !gnss.sendWait("rtcm1124 com2 5" , "response: OK", COMMANDDELAY) ||
-                !gnss.sendWait("rtcm1074 com2 2" , "response: OK", COMMANDDELAY) ||
-                !gnss.sendWait("rtcm1084 com2 2" , "response: OK", COMMANDDELAY))
-                { haltUnit("GNSS", "RTCM setup failed"); }
+                !gnss.sendWait("rtcm1077 com2 1" , "response: OK", COMMANDDELAY) ||
+                !gnss.sendWait("rtcm1087 com2 1" , "response: OK", COMMANDDELAY) ||
+                !gnss.sendWait("rtcm1097 com2 1" , "response: OK", COMMANDDELAY)) haltUnit("GNSS", "RTCM setup failed");
 
             delay(500);
 
@@ -268,7 +266,7 @@ void loop() {
         // Print radio utilization every 30 seconds
         static unsigned long lastUtilReport = 0;
         if (millis() - lastUtilReport > 30000) {
-            Radio.printRadioUtilization();
+            //Radio.printRadioUtilization();
             Radio.printRTCMTypeReport();
             lastUtilReport = millis();
         }
@@ -279,7 +277,7 @@ void loop() {
         break;
     }
 
-    monitorSystem();
+    //monitorSystem();
 
 }
 

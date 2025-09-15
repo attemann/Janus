@@ -2,8 +2,8 @@
 #include <HardwareSerial.h>
 
 // Adjust to your wiring:
-#define GNSS_RX  18   // UM980 RX <- ESP32 TX
-#define GNSS_TX  17  // UM980 TX -> ESP32 RX
+#define GNSS_RX  5   // UM980 RX <- ESP32 TX
+#define GNSS_TX  4  // UM980 TX -> ESP32 RX
 #define GNSS_BAUD 115200
 
 HardwareSerial SerialGNSS(2);
