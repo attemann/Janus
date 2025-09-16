@@ -3,12 +3,10 @@ String inputLine = "";  // Buffer for brukerinndata
 
 extern HardwareSerial SerialGNSS;  // GNSS serial port
 extern bool showFix;
-extern bool showGngga;
 
 void showMenu() {
     Serial.println("--- GNSS Console Commands ---");
     Serial.println("  ?       - Show help");
-    Serial.println("  g       - Enable gngga output");
     Serial.println("  f       - Enable fix output");
     Serial.println("  reset   - Reset the ESP32");
     Serial.println("  any other command");
@@ -21,9 +19,6 @@ void handleConsoleCommand(String cmd) {
 
     if (cmd == "f") {
 		showFix = !showFix;  // Toggle fix output
-    }
-    else if (cmd == "g") {
-        showGngga = !showGngga;  // Toggle RTCM output
     }
     else if (cmd == "reset") {
         Serial.println("Resetting ESP32...");

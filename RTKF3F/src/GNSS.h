@@ -38,6 +38,21 @@ public:
         return true;
     }
 
+    // Peek uten å forbruke bytes
+    bool peek(size_t index, uint8_t& out) const {
+        if (index >= count()) return false;
+        size_t pos = (_head + index) % _size;
+        out = _data[pos];
+        return true;
+    }
+
+    // Drop n bytes
+    bool skip(size_t n) {
+        if (n > count()) return false;
+        _head = (_head + n) % _size;
+        return true;
+    }
+
     size_t count() const {
         return (_tail - _head + _size) % _size;
     }
@@ -65,6 +80,56 @@ struct GNSSFix {
     float elevation = 0.0f;
 };
 
+// Unicore Common Header (28 bytes)
+struct UnicoreHeader {
+    uint8_t sync[3];        // 0-2: AA 44 B5
+    uint8_t headerLength;   // 3: Header length (28)
+    uint16_t messageID;     // 4-5: Message ID (2118 for BESTNAVB)
+    uint8_t messageType;    // 6: Message type
+    uint8_t portAddress;    // 7: Port address
+    uint16_t messageLength; // 8-9: Message length (payload only)
+    uint16_t sequence;      // 10-11: Sequence number
+    uint8_t idleTime;       // 12: Idle time
+    uint8_t timeStatus;     // 13: Time status
+    uint16_t week;          // 14-15: GPS week number
+    uint32_t milliseconds;  // 16-19: Milliseconds into week (but stored as 4 bytes from 16-19)
+    uint32_t receiverStatus;// 20-23: Receiver status
+    uint16_t reserved;      // 24-25: Reserved
+    uint16_t receiverVersion; // 26-27: Receiver software version
+} __attribute__((packed));
+
+// BESTNAVB Message Payload (72 bytes)
+struct BestNavBPayload {
+    uint32_t solStat;       // 0-3: Solution status
+    uint32_t posType;       // 4-7: Position type
+    double lat;             // 8-15: Latitude (degrees)
+    double lon;             // 16-23: Longitude (degrees)  
+    double hgt;             // 24-31: Height above MSL (meters)
+    float undulation;       // 32-35: Undulation (meters)
+    uint32_t datumID;       // 36-39: Datum ID
+    float latStdDev;        // 40-43: Latitude standard deviation (meters)
+    float lonStdDev;        // 44-47: Longitude standard deviation (meters)
+    float hgtStdDev;        // 48-51: Height standard deviation (meters)
+    uint8_t stnID[4];       // 52-55: Base station ID
+    float diffAge;          // 56-59: Differential age (seconds)
+    float solAge;           // 60-63: Solution age (seconds)
+    uint8_t numObs;         // 64: Number of observations
+    uint8_t numL1;          // 65: Number of L1 observations
+    uint8_t numL1L2;        // 66: Number of L1/L2 observations
+    uint8_t reserved;       // 67: Reserved
+    uint8_t extSolStat;     // 68: Extended solution status
+    uint8_t galBdsSignals;  // 69: Galileo/BDS signals mask
+    uint8_t gpsGloSignals;  // 70: GPS/GLONASS signals mask
+    uint8_t reserved2;      // 71: Reserved
+} __attribute__((packed));
+
+// Complete BESTNAVB Message
+struct BestNavBMessage {
+    UnicoreHeader header;
+    BestNavBPayload payload;
+    uint32_t crc32;
+} __attribute__((packed));
+
 // ---------------- GNSS Module ----------------
 class GNSSModule {
 public:
@@ -78,7 +143,9 @@ public:
     bool sendWait(const char* cmd, const char* expected = "response: OK", uint32_t timeoutMs = 2000);
 
     bool pumpGGA(GNSSFix& fix);
+    bool pumpBestNavA(GNSSFix& fix);
     void pumpRTCM();
+    uint32_t crc32(const uint8_t* data, size_t len);
 
     void printFix(const GNSSFix& fix);
     void clearUARTBuffer();
@@ -106,7 +173,9 @@ private:
     // Line/frame helpers
     void fillBufferFromUART();
     bool findCompleteGGA(char* line, size_t maxLen);
-    void logRTCMMessageType(uint16_t messageType, size_t frameSize);
+    bool findCompleteBestNavA(char* line, size_t maxLen);
+    bool parseBestNavA(const char* line, GNSSFix& fix);
+    //void logRTCMMessageType(uint16_t messageType, size_t frameSize);
 };
 
 #endif

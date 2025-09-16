@@ -31,32 +31,42 @@ void GNSSModule::sendCommand(const char* cmd) {
 }
 
 bool GNSSModule::sendWait(const char* cmd, const char* expected, uint32_t timeoutMs) {
-    if (cmd && *cmd) sendCommand(cmd);
-    const uint32_t t0 = millis();
+    // 1. Flush evt. gamle data
+    //_buffer.clear();
+    fillBufferFromUART(); // tøm inn evt. bytes i driveren også
+    _buffer.clear();      // så vi starter HELT rent
 
+    // 2. Send kommando
+    sendCommand(cmd);
+
+    const uint32_t t0 = millis();
     char response[256];
     size_t idx = 0;
     response[0] = '\0';
 
+    // 3. Vent på svar
     while ((millis() - t0) < timeoutMs) {
         fillBufferFromUART();
 
         uint8_t b;
         while (_buffer.read(b)) {
             char c = (char)b;
-            //Serial.printf("[%02X] %c ", b, c);
+            Serial.printf("[%02X] %c ", b, c);
+
             if (c >= 32 && c <= 126 && idx < sizeof(response) - 1) {
                 response[idx++] = c;
                 response[idx] = '\0';
             }
 
             if (strstr(response, expected)) {
-                GDBG_PRINTF("\r\nsendWait [%s] OK", cmd);
+                GDBG_PRINTF("- sendWait [%s] OK\r\n", cmd);
                 return true;
             }
         }
         delay(1);
     }
+
+    GDBG_PRINTF("- sendWait [%s] FAIL\r\n", cmd);
     return false;
 }
 
@@ -84,6 +94,96 @@ bool GNSSModule::pumpGGA(GNSSFix& fix) {
         return parseGGA(line, fix);
     }
     return false;
+}
+
+
+bool GNSSModule::pumpBestNavA(GNSSFix& fix) {
+    fillBufferFromUART();
+    char line[128];
+    if (findCompleteBestNavA(line, sizeof(line))) {
+        return parseBestNavA(line, fix);
+    }
+}
+
+bool GNSSModule::findCompleteBestNavA(char* out, size_t maxLen) {
+    static char buf[512];
+    static size_t len = 0;
+
+    // les alt fra UART inn i tempbuffer
+    while (_ser->available() && len < sizeof(buf) - 1) {
+        char c = _ser->read();
+        buf[len++] = c;
+        if (c == '\n') {
+            buf[len] = 0;
+            if (strncmp(buf, "#BESTNAVA", 9) == 0) {
+                strncpy(out, buf, maxLen);
+                out[maxLen - 1] = 0;
+                len = 0;
+                return true;
+            }
+            len = 0; // reset hvis ikke match
+        }
+    }
+    return false;
+}
+
+// Parse BESTNAVA-linje til GNSSFix
+bool GNSSModule::parseBestNavA(const char* line, GNSSFix& fix) {
+    // Eksempel fra manual:
+    // #BESTNAVA,97,GPS,FINE,2294,472312000,0,0,18,16;
+    // SOL_COMPUTED,SINGLE,40.0789588272,116.23651029820,65.8312,-8.4925,WGS84,
+    // 1.2221,1.1053,2.1970,"0",0.000,0.000,50,28,28,0,1,12,12,41,SOL_COMPUTED,
+    // DOPPLER_VELOCITY,0.000,0.000,0.0046,335.592288,0.0045,0.0194,0.0123*CRC
+
+    // hoppe til etter semikolon (feltstart)
+    const char* payload = strchr(line, ';');
+    if (!payload) return false;
+    payload++;
+
+    char status[32], posType[32], datum[16], velType[32];
+    double lat, lon, hgt;
+    float undulation, latStd, lonStd, hgtStd;
+    int solStatus, numSV, numSolSV;
+
+    int n = sscanf(payload,
+        "%31[^,],%31[^,],%lf,%lf,%lf,%f,%15[^,],%f,%f,%f,"
+        "\"%*[^\"]\",%*f,%*f,%d,%d,%d,%*d,%*d,%*d,%*d,%*d,"
+        "%*[^,],%31[^,],%*f,%*f,%*f,%*f,%*f,%*f,%*f",
+        status, posType, &lat, &lon, &hgt,
+        &undulation, datum, &latStd, &lonStd, &hgtStd,
+        &numSV, &numSolSV, velType);
+
+    if (n < 13) return false;
+
+    fix.lat = (float)lat;
+    fix.lon = (float)lon;
+    fix.adjDown = (float)hgt;
+    fix.HDOP = (latStd + lonStd) * 0.5f;
+    fix.SIV = numSolSV;
+
+    // Sett fix.type basert på posType
+    if (strstr(posType, "SINGLE")) fix.type = 1;
+    else if (strstr(posType, "DGPS")) fix.type = 2;
+    else if (strstr(posType, "RTKFIXED")) fix.type = 4;
+    else if (strstr(posType, "RTKFLOAT")) fix.type = 5;
+    else fix.type = 0;
+
+    return true;
+}
+
+// CRC32 (Unicore standard)
+uint32_t GNSSModule::crc32(const uint8_t* data, size_t len) {
+    uint32_t crc = 0;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= data[i];
+        for (int j = 0; j < 8; j++) {
+            if (crc & 1)
+                crc = (crc >> 1) ^ 0xEDB88320;
+            else
+                crc >>= 1;
+        }
+    }
+    return crc;
 }
 
 bool GNSSModule::findCompleteGGA(char* line, size_t maxLen) {

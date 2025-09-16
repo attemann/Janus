@@ -18,8 +18,8 @@ void setup() {
   SerialGNSS.begin(GNSS_BAUD, SERIAL_8N1, GNSS_RX, GNSS_TX);
   delay(1000);
   while (!SerialGNSS);
-//  SerialGNSS.print("versiona com1\r\n");
-  SerialGNSS.print("gpgga com2 1\r\n");
+  SerialGNSS.print("versiona\r\n");
+//  SerialGNSS.print("gpgga com2 1\r\n");
 //  SerialGNSS.print("versiona com3\r\n");
 
 }
