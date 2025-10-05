@@ -1,9 +1,13 @@
 ﻿// GNSS.cpp - Cleaned Minimal Ring Buffer Implementation
-#include "GNSS.h"
+#include <Arduino.h>
+#include <HardwareSerial.h>
 #include <string.h>
-#include "RadioModule.h"
+//#include "esp_task_wdt.h"
 #include "_macros.h"
-#include "esp_task_wdt.h"
+#include "GNSS.h"
+
+#include "RadioModule.h"
+
 
 // ---------------- GNSSModule ----------------
 
@@ -15,6 +19,10 @@ bool GNSSModule::begin(long baud, int rxPin, int txPin) {
         _ser->begin(baud);
     }
     _ser->setTimeout(5);
+
+    // flush garbage
+    while (_ser->available()) _ser->read();  
+
     _buffer.clear();
     return true;
 }
@@ -32,17 +40,17 @@ void GNSSModule::sendCommand(const char* cmd) {
 
 bool GNSSModule::sendWait(const char* cmd, const char* expected, uint32_t timeoutMs) {
     // 1. Flush evt. gamle data
-    //_buffer.clear();
+    _buffer.clear();
     fillBufferFromUART(); // tøm inn evt. bytes i driveren også
     _buffer.clear();      // så vi starter HELT rent
-
-    // 2. Send kommando
-    sendCommand(cmd);
 
     const uint32_t t0 = millis();
     char response[256];
     size_t idx = 0;
     response[0] = '\0';
+
+    // 2. Send kommando
+    sendCommand(cmd);
 
     // 3. Vent på svar
     while ((millis() - t0) < timeoutMs) {
