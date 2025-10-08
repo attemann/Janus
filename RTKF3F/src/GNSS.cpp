@@ -8,9 +8,7 @@
 
 #include "RadioModule.h"
 
-
 // ---------------- GNSSModule ----------------
-
 bool GNSSModule::begin(long baud, int rxPin, int txPin) {
     if (rxPin >= 0 && txPin >= 0) {
         _ser->begin(baud, SERIAL_8N1, rxPin, txPin);
@@ -34,8 +32,11 @@ void GNSSModule::setRadio(RadioModule* radio) {
 
 void GNSSModule::sendCommand(const char* cmd) {
     if (!cmd) return;
+    _ser->flush();
+    delay(2);
     _ser->print(cmd);
     _ser->print("\r\n");
+	_ser->flush();
 }
 
 bool GNSSModule::sendWait(const char* cmd, const char* expected, uint32_t timeoutMs) {
@@ -59,7 +60,8 @@ bool GNSSModule::sendWait(const char* cmd, const char* expected, uint32_t timeou
         uint8_t b;
         while (_buffer.read(b)) {
             char c = (char)b;
-            Serial.printf("[%02X] %c ", b, c);
+            //Serial.printf("[%02X] %c ", b, c);
+            Serial.printf("%c", c);
 
             if (c >= 32 && c <= 126 && idx < sizeof(response) - 1) {
                 response[idx++] = c;
@@ -103,7 +105,6 @@ bool GNSSModule::pumpGGA(GNSSFix& fix) {
     }
     return false;
 }
-
 
 bool GNSSModule::pumpBestNavA(GNSSFix& fix) {
     fillBufferFromUART();
@@ -430,17 +431,23 @@ void GNSSModule::pumpRTCM() {
     }
 }
 
-bool GNSSModule::parseLatLon(const char* dm, char hemi, float& outDeg) {
+bool GNSSModule::parseLatLon(const char* dm, char hemi, double& outDeg) {
     if (!dm || !*dm) return false;
+
     const char* dot = strchr(dm, '.');
     if (!dot || dot - dm < 3) return false;
+
     int degDigits = (dot - dm > 4) ? 3 : 2;
     char degBuf[4] = { 0 };
     strncpy(degBuf, dm, degDigits);
     int deg = atoi(degBuf);
-    float min = atof(dm + degDigits);
-    outDeg = deg + (min / 60.0f);
-    if (hemi == 'S' || hemi == 'W') outDeg = -outDeg;
+
+    double min = atof(dm + degDigits);
+    outDeg = deg + (min / 60.0);
+
+    if (hemi == 'S' || hemi == 'W')
+        outDeg = -outDeg;
+
     return true;
 }
 

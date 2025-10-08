@@ -15,7 +15,7 @@ static constexpr uint32_t FREQUENCY_CD = 868200000;
 
 #define MAX_GU_UNITS 5
 #define SLOPELENGTH  100
-#define SURVEYINTIME 10000
+#define SURVEYINTIME 120000
 
 // Const for airborne detection
 #define DETECTOR_BUFFER_SIZE 30  // 3 secs with 0.1s interval

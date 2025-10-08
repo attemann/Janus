@@ -69,7 +69,7 @@ public:
 
 // ---------------- GNSS Fix Struct ----------------
 struct GNSSFix {
-    float lat = 0.0f, lon = 0.0f;
+    double lat = 0.0f, lon = 0.0f;
     float relNorth = 0.0f, relEast = 0.0f, relDown = 0.0f;
     float adjNorth = 0.0f, adjEast = 0.0f, adjDown = 0.0f;
     uint8_t hour = 0, minute = 0;
@@ -168,7 +168,7 @@ private:
     // Parsing helpers
     uint32_t crc24q(const uint8_t* data, size_t len);
     bool parseGGA(const char* line, GNSSFix& fix);
-    static bool parseLatLon(const char* dm, char hemi, float& outDeg);
+    static bool parseLatLon(const char* dm, char hemi, double& outDeg);
 
     // Line/frame helpers
     void fillBufferFromUART();

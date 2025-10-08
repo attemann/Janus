@@ -22,6 +22,9 @@
 #define XIAO_ESP32C6
 // #define ESP32S3
 
+#define LED_BUILTIN 15
+#define BLINK_DURATION_MS 100
+
 // Radio pins
 #if defined(XIAO_ESP32C6)
 inline constexpr int8_t RFM69_CSS  = 16; // Hvit
@@ -65,6 +68,7 @@ Arena  arena;
 Glider glider;
 GNSSFix fix;
 bool showFix = true;
+bool showRTKStatus = false;
 
 // static unsigned long lastSpeakMs = 0;
 #define SPEAK_INTERVAL_MS 30000
@@ -80,6 +84,8 @@ void setup() {
     delay(200);
     Serial.printf("%s starting\n", APPNAME);
 
+    setupWebServer();  // Add this line
+
     if (!radio.init(RFM69_MISO, RFM69_MOSI, RFM69_SCK, THIS_NODE_ID, NETWORK_ID, FREQUENCY_RTCM)) {
         while (true) delay(100);
     }
@@ -93,32 +99,37 @@ void setup() {
     gnss.begin(GNSS_BAUD, UART_RX, UART_TX);
 	gnss.setRadio(&radio);  
     
-    delay(200);
-    if (!gnss.sendWait("unlog", "response: OK", COMMANDDELAY)) {
+    //delay(1000);
+    gnss.clearUARTBuffer();
+
+    if (!gnss.sendWait("\r\nunlog", "response: OK", COMMANDDELAY)) {
         //haltUnit("GNSS", "- No [unlog] response");
     }
 
+    if (!gnss.sendWait("config", "$CONFIG, COM3", 3000)) {
+        Serial.println("- Show GPS config fail");
+    }
+
     // Configure rover
-    if (!gnss.sendWait("config signalgroup 2"     ,"response: OK", COMMANDDELAY) ||
-        !gnss.sendWait("config pvtalg multi"      ,"response: OK", COMMANDDELAY) ||
-        !gnss.sendWait("config rtk timeout 30"    ,"response: OK", COMMANDDELAY) ||
-        !gnss.sendWait("config rtk reliability 1" ,"response: OK", COMMANDDELAY) ||
-        !gnss.sendWait("mode rover"               ,"response: OK", COMMANDDELAY) ||
-        !gnss.sendWait("gpgga com2 1"             ,"response: OK", COMMANDDELAY)) {
+    if (!gnss.sendWait("config pvtalg multi"       ,"response: OK", COMMANDDELAY) ||
+        !gnss.sendWait("config rtk timeout 120"    ,"response: OK", COMMANDDELAY) ||
+        !gnss.sendWait("config rtk reliability 3 1","response: OK", COMMANDDELAY) ||
+        !gnss.sendWait("mode rover"                ,"response: OK", COMMANDDELAY) ||
+        !gnss.sendWait("gpgga com2 1"              ,"response: OK", COMMANDDELAY)) {
             Serial.println("- GPS config fail");
     } else {
         radio.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_DEVICESTATE, DEVICE_STARTING);
         Serial.println(APPNAME " ready!");
         showMenu();
 	} 
-    setupWebServer();  // Add this line
+
 }
 
 void processGNSSData() {
     bool res = false;
     res = gnss.pumpGGA(fix);
     if (res && showFix) {
-        Serial.printf("GGA OK: Time=%02d:%02d:%.2f" ANSI_GREEN " FIX = %u " ANSI_RESET "SIV = %d HDOP = %.2f lat = %.6f lon = %.6f elev = %.2f\n",
+        Serial.printf("GGA OK: Time=%02d:%02d:%.2f" ANSI_GREEN " FIX = %u " ANSI_RESET "SIV = %d HDOP = %.2f lat = %.8f lon = %.8f elev = %.2f\n",
             fix.hour, fix.minute, fix.second, (unsigned)fix.type, fix.SIV, fix.HDOP, fix.lat, fix.lon, fix.elevation);
     }
     sendPeriodicUpdate();
@@ -361,8 +372,8 @@ void sendPositionResponse() {
     // Create position response packet
     struct PositionResponse {
         uint8_t msgType = MSG_REQ_POS;
-        float lat;
-        float lon;
+        double lat;
+        double lon;
         float elevation;
         uint8_t fixType;
         uint8_t siv;
@@ -401,6 +412,13 @@ void updateRTCMStats(uint16_t messageType, size_t length) {
 
 void loop() {
     readConsole();
+
+    if (showRTKStatus) {
+        if (!gnss.sendWait("rtkstatusa", "#RTKSTATUSA", 1000)) {
+			Serial.println("⚠️ Failed to get RTK status");
+        }
+        showRTKStatus = false;
+	}
     processGNSSData();
     processRadioPackets();
 

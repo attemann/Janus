@@ -167,7 +167,6 @@ void loop() {
     case DeviceState::DEVICE_STARTING:
         sendToDisplay("Starting", "Getting fix");
         if (!gnss.sendWait("unlog"               , "response: OK", COMMANDDELAY)) GDBG_PRINTLN("unlog failed");
-        if (!gnss.sendWait("config signalgroup 2", "response: OK", COMMANDDELAY)) GDBG_PRINTLN("config signalgroup 2");
         if (!gnss.sendWait("config pvtalg multi" , "response: OK", COMMANDDELAY)) GDBG_PRINTLN("config pvtalg multi");
         if (!gnss.sendWait("mode rover"          , "response: OK", COMMANDDELAY)) GDBG_PRINTLN("mode rover failed");
         if (!gnss.sendWait("gpgga com2 1"        , "response: OK", COMMANDDELAY)) GDBG_PRINTLN("gpgga com2 1 failed");
@@ -200,7 +199,7 @@ void loop() {
                 Radio.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_DEVICESTATE,
                     static_cast<uint8_t>(DeviceState::DEVICE_SURVEYING));
                 if (!gnss.sendWait("unlog"                          , "response: OK", COMMANDDELAY) ||
-                    !gnss.sendWait("mode base time 15"              , "response: OK", COMMANDDELAY) ||
+                    !gnss.sendWait("mode base time 120"             , "response: OK", COMMANDDELAY) ||
                     !gnss.sendWait("config antennadeltahen 0 0 2.0" , "response: OK", COMMANDDELAY) ||
                     !gnss.sendWait("saveconfig"                     , "response: OK", COMMANDDELAY)) haltUnit("GNSS", "Start failed");
                 deviceState = DeviceState::DEVICE_SURVEYING;
@@ -222,7 +221,8 @@ void loop() {
             uint32_t remaining = (SURVEYINTIME - elapsed) / 1000;
 
             if (millis() - lastSpeakMs >= SPEAK_INTERVAL_MS) {
-                Serial.printf("BASE_SURVEYING: Remaining: %lus\n", (unsigned long)remaining);
+                //Serial.printf("BASE_SURVEYING: Remaining: %lus\n", (unsigned long)remaining);
+				sendToDisplay("Surveying", String(remaining) + " sec left");
                 uint8_t speakLeft = (remaining > 255) ? 255 : (uint8_t)remaining;
                 Radio.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_SURVEY, speakLeft);
                 lastSpeakMs = millis();
@@ -232,9 +232,9 @@ void loop() {
             sendToDisplay("Configuring GPS", "RTK parameters");
             if (!gnss.sendWait("unlog"           , "response: OK", COMMANDDELAY) ||
                 !gnss.sendWait("rtcm1006 com2 10", "response: OK", COMMANDDELAY) ||
-                !gnss.sendWait("rtcm1077 com2 1" , "response: OK", COMMANDDELAY) ||
-                !gnss.sendWait("rtcm1087 com2 1" , "response: OK", COMMANDDELAY) ||
-                !gnss.sendWait("rtcm1097 com2 1" , "response: OK", COMMANDDELAY)) haltUnit("GNSS", "RTCM setup failed");
+                !gnss.sendWait("rtcm1074 com2 1" , "response: OK", COMMANDDELAY) ||
+                !gnss.sendWait("rtcm1084 com2 1" , "response: OK", COMMANDDELAY) ||
+                !gnss.sendWait("rtcm1230 com2 10", "response: OK", COMMANDDELAY)) haltUnit("GNSS", "RTCM setup failed");
 
             delay(500);
 
@@ -254,7 +254,7 @@ void loop() {
         unsigned long seconds = (millis()-msOperStart) / 1000;
         unsigned long minutes = seconds / 60;
         unsigned long hours = minutes / 60;
-		char timeStr[9];
+		char timeStr[16];
 
 		snprintf(timeStr, sizeof(timeStr), "%02lu:%02lu:%02lu", hours, minutes % 60, seconds % 60);
 
