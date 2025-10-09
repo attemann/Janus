@@ -22,9 +22,6 @@
 #define XIAO_ESP32C6
 // #define ESP32S3
 
-#define LED_BUILTIN 15
-#define BLINK_DURATION_MS 100
-
 // Radio pins
 #if defined(XIAO_ESP32C6)
 inline constexpr int8_t RFM69_CSS  = 16; // Hvit
@@ -67,7 +64,7 @@ RadioModule::RTCM_Reassembler reassembler;
 Arena  arena;
 Glider glider;
 GNSSFix fix;
-bool showFix = true;
+bool showFix = false;
 bool showRTKStatus = false;
 
 // static unsigned long lastSpeakMs = 0;
@@ -84,7 +81,8 @@ void setup() {
     delay(200);
     Serial.printf("%s starting\n", APPNAME);
 
-    setupWebServer();  // Add this line
+
+
 
     if (!radio.init(RFM69_MISO, RFM69_MOSI, RFM69_SCK, THIS_NODE_ID, NETWORK_ID, FREQUENCY_RTCM)) {
         while (true) delay(100);
@@ -114,14 +112,16 @@ void setup() {
     if (!gnss.sendWait("config pvtalg multi"       ,"response: OK", COMMANDDELAY) ||
         !gnss.sendWait("config rtk timeout 120"    ,"response: OK", COMMANDDELAY) ||
         !gnss.sendWait("config rtk reliability 3 1","response: OK", COMMANDDELAY) ||
-        !gnss.sendWait("mode rover"                ,"response: OK", COMMANDDELAY) ||
-        !gnss.sendWait("gpgga com2 1"              ,"response: OK", COMMANDDELAY)) {
+        !gnss.sendWait("mode rover uav highdyn"    ,"response: OK", COMMANDDELAY) ||
+        !gnss.sendWait("gpgga com2 0.05"            ,"response: OK", COMMANDDELAY)) {
             Serial.println("- GPS config fail");
     } else {
         radio.sendMessageCode(NODEID_CD, FREQUENCY_CD, FREQUENCY_RTCM, MSG_DEVICESTATE, DEVICE_STARTING);
         Serial.println(APPNAME " ready!");
         showMenu();
 	} 
+
+    setupWebServer();  // Add this line
 
 }
 
@@ -217,7 +217,7 @@ void handleFullRTCM(const uint8_t* buffer, size_t len) {
     const uint8_t* rtcm = buffer;     // No skipping needed
     size_t rlen = len;                // Full length
 
-    Serial.printf("✓ RTCM packet: %u bytes starting with 0xD3\n", rlen);
+    //Serial.printf("✓ RTCM packet: %u bytes starting with 0xD3\n", rlen);
 
     // Extract and verify length
     uint16_t payloadLen = ((rtcm[1] & 0x03) << 8) | rtcm[2];
@@ -302,7 +302,7 @@ bool validateAndInjectRTCM(const uint8_t* rtcm, size_t rlen, const char* source)
 
     // Extract and log message type
     uint16_t type = gnss.getRTCMType(rtcm, rlen);
-    Serial.printf("✓ RTCM %s: type " ANSI_YELLOW "[%4u]" ANSI_RESET " %u bytes\n", source, type, (unsigned)rlen);
+    //Serial.printf("✓ RTCM %s: type " ANSI_YELLOW "[%4u]" ANSI_RESET " %u bytes\n", source, type, (unsigned)rlen);
 
     logRTCMMessage(type, rlen);  // Add this line
 

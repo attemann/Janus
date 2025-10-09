@@ -65,15 +65,15 @@ void SoundTask::handle(const SoundCommand& cmd) {
     case SoundCmdType::WAV:
         if (cmd.path) _speaker.playWavFile(cmd.path);
         break;
-    case SoundCmdType::NUMBER:    _speaker.playNumberFile(cmd.intValue); break;
-    case SoundCmdType::INT:       _speaker.speakInt(cmd.intValue); break;
-    case SoundCmdType::TIME:      _speaker.speakTime(cmd.floatValue); break;
-    case SoundCmdType::ERROR:     _speaker.speakError(cmd.intValue); break;
-    case SoundCmdType::INFO:      _speaker.speakInfo(cmd.intValue); break;
-    case SoundCmdType::FIX:       _speaker.speakFix(cmd.intValue); break;
-    case SoundCmdType::STARTING:  _speaker.speakStarting(); break;
-    case SoundCmdType::GETTINGFIX:   _speaker.speakGettingFix(); break;
-    case SoundCmdType::SURVEY:    _speaker.speakSurvey(); break;
-    case SoundCmdType::OPERATING: _speaker.speakOperating(); break;
+    case SoundCmdType::NUMBER:     _speaker.playNumberFile(cmd.intValue); break;
+    case SoundCmdType::INT:        _speaker.speakInt(cmd.intValue); break;
+    case SoundCmdType::TIME:       _speaker.speakTime(cmd.floatValue); break;
+    case SoundCmdType::ERROR:      _speaker.speakError(cmd.intValue); break;
+    case SoundCmdType::INFO:       _speaker.speakInfo(cmd.intValue); break;
+    case SoundCmdType::FIX:        _speaker.speakFix(cmd.intValue); break;
+    case SoundCmdType::STARTING:   _speaker.speakStarting(); break;
+    case SoundCmdType::GETTINGFIX: _speaker.speakGettingFix(); break;
+    case SoundCmdType::SURVEY:     _speaker.speakSurvey(); break;
+    case SoundCmdType::OPERATING:  _speaker.speakOperating(); break;
     }
 }
